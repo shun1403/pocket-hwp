@@ -90,3 +90,39 @@ export function applyStyle(doc: EditableDocument, a: DocPos, b: DocPos, styleId:
     }
   }
 }
+
+const STYLE_CHAR_KEYS = ['fontFamily', 'fontSize', 'bold', 'italic', 'underline', 'strikethrough', 'textColor', 'shadeColor', 'superscript', 'subscript', 'ratios', 'spacings'] as const;
+const STYLE_PARA_KEYS = ['alignment', 'lineSpacing', 'lineSpacingType', 'marginLeft', 'indent', 'spacingBefore', 'spacingAfter'] as const;
+
+function pick<T extends object>(obj: T, keys: readonly string[]): Partial<T> {
+  return Object.fromEntries(Object.entries(obj).filter(([k, v]) => keys.includes(k) && v !== undefined)) as Partial<T>;
+}
+
+/** 캐럿 자리의 글자·문단 모양을 스타일에 담는다. */
+export function redefineStyle(doc: EditableDocument, styleId: number, pos: DocPos): void {
+  const char = pick(doc.charProps(pos), STYLE_CHAR_KEYS);
+  const para = pick(doc.paraProps(pos), STYLE_PARA_KEYS);
+  doc.raw.updateStyleShapes(styleId, JSON.stringify(char), JSON.stringify(para));
+}
+
+/** 캐럿 자리 모양으로 새 문단 스타일을 만들고 그 문단에 건다. 새 스타일 id를 돌려준다. */
+export function createStyleFromPos(doc: EditableDocument, pos: DocPos, name: string): number {
+  const id = doc.raw.createStyle(JSON.stringify({ name, englishName: name, type: 0, nextStyleId: 0 }));
+  redefineStyle(doc, id, pos);
+  // 새 스타일은 다음 문단도 같은 스타일로 이어지게 한다.
+  doc.raw.updateStyle(id, JSON.stringify({ name, englishName: name, nextStyleId: id }));
+  applyStyle(doc, pos, pos, id);
+  return id;
+}
+
+export function renameStyle(doc: EditableDocument, styleId: number, name: string): void {
+  const s = (JSON.parse(doc.raw.getStyleList()) as { id: number; englishName?: string; nextStyleId?: number }[]).find((x) => x.id === styleId);
+  doc.raw.updateStyle(styleId, JSON.stringify({ name, englishName: s?.englishName ?? name, nextStyleId: s?.nextStyleId ?? styleId }));
+}
+
+/** 이 문단부터 번호를 start 로 새로 시작한다. */
+export function restartNumbering(doc: EditableDocument, pos: DocPos, start: number): void {
+  if (inCell(pos)) return;
+  // mode 2: 새 번호로 시작 (0: 앞 번호에 이어, 1: 이전 목록에 이어)
+  doc.raw.setNumberingRestart(pos.sec, pos.para, 2, start);
+}

@@ -2178,3 +2178,116 @@ input:focus-visible {
   font-size: 14px;
   line-height: 1.5;
 }
+
+/* ───────────── 인쇄 ───────────── */
+
+.print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 0;
+  }
+
+  html.printing body > *:not(.print-root) {
+    display: none !important;
+  }
+
+  html.printing,
+  html.printing body {
+    background: #fff;
+    overflow: visible;
+    height: auto;
+  }
+
+  html.printing .print-root {
+    display: block;
+  }
+
+  .print-root img {
+    display: block;
+    break-after: page;
+  }
+}
+
+/* ───────────── 목차·책갈피·차트 ───────────── */
+
+.outline-row {
+  padding-left: calc(16px + var(--level, 0) * 18px);
+}
+
+.outline-num {
+  color: var(--brand);
+  font-weight: 700;
+  min-width: 2.2em;
+}
+
+.outline-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.outline-page {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.bookmark-row {
+  display: flex;
+  align-items: center;
+}
+
+.bookmark-row .sheet-row {
+  flex: 1;
+}
+
+.link-uri {
+  overflow-wrap: anywhere;
+}
+
+.text-field.multi {
+  height: auto;
+  min-height: 120px;
+  padding: 12px 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.secondary-btn.danger {
+  color: var(--danger, #c62828);
+}
+
+.chart-scroll {
+  overflow-x: auto;
+  margin: 0 8px;
+}
+
+.chart-table {
+  border-collapse: collapse;
+}
+
+.chart-table th,
+.chart-table td {
+  padding: 2px;
+}
+
+.chart-input {
+  width: 88px;
+  height: 44px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 16px;
+}
+
+.chart-input.label,
+.chart-input.name {
+  font-weight: 600;
+}

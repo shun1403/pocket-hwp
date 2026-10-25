@@ -1,4 +1,6 @@
-import { addBookmark, insertBreak, insertHyperlink, insertNote, insertPicture, insertTextBox } from '../../../doc/ops/inserts';
+import { insertBreak, insertHyperlink, insertNote, insertPicture, insertTextBox } from '../../../doc/ops/inserts';
+import { type ShapeType, insertShape } from '../../../doc/ops/shapes';
+import { openBookmarksSheet, openLinkSheet } from '../../doc-tools';
 import { inCell, innerPara } from '../../../doc/position';
 import { pickFile } from '../../../platform/files';
 import { askText } from '../../dialog';
@@ -41,6 +43,12 @@ async function note(ctx: PanelContext, kind: 'footnote' | 'endnote'): Promise<vo
 }
 
 async function hyperlink(ctx: PanelContext): Promise<void> {
+  // 캐럿이 링크 위에 있으면 그 링크를 열거나 고친다.
+  const existing = ctx.editor.selection ? null : ctx.editor.linkAtCaret();
+  if (existing) {
+    openLinkSheet(ctx.editor, existing.pos, existing.link);
+    return;
+  }
   const sel = ctx.editor.selection;
   if (!sel || innerPara(sel[0]) !== innerPara(sel[1])) {
     toast('링크를 걸 글을 먼저 한 문단 안에서 길게 눌러 선택해 주세요.');
@@ -51,12 +59,6 @@ async function hyperlink(ctx: PanelContext): Promise<void> {
   ctx.editor.command((doc) => insertHyperlink(doc, sel[0], sel[1], uri));
 }
 
-async function bookmark(ctx: PanelContext): Promise<void> {
-  if (!bodyOnly(ctx, '책갈피')) return;
-  const name = await askText('책갈피 이름', '', '넣기');
-  if (!name) return;
-  ctx.editor.command((doc, caret) => addBookmark(doc, caret, name));
-}
 
 export const insertTab: TabDef = {
   id: 'insert',
@@ -83,12 +85,30 @@ export const insertTab: TabDef = {
         ]),
       ),
       section(
+        '도형',
+        tiles(
+          b,
+          (
+            [
+              ['rectangle', '사각형', 'border'],
+              ['ellipse', '타원', 'ellipse'],
+              ['line', '선', 'line'],
+            ] as const
+          ).map(([type, label, iconName]) => ({
+            label,
+            icon: iconName,
+            onClick: () => bodyOnly(ctx, '도형') && ed.command((doc, caret) => insertShape(doc, caret, type as ShapeType, ed.bodyWidth() * 0.4)),
+          })),
+        ),
+        h('p.panel-note', {}, '넣은 도형의 테두리를 누르면 색·순서·묶기·캡션을 바꿀 수 있어요.'),
+      ),
+      section(
         '주석·연결',
         tiles(b, [
           { label: '각주', icon: 'footnote', onClick: () => void note(ctx, 'footnote') },
           { label: '미주', icon: 'footnote', onClick: () => void note(ctx, 'endnote') },
           { label: '링크', icon: 'link', onClick: () => void hyperlink(ctx) },
-          { label: '책갈피', icon: 'bookmark', onClick: () => void bookmark(ctx) },
+          { label: '책갈피', icon: 'bookmark', onClick: () => openBookmarksSheet(ed) },
         ]),
       ),
       section(

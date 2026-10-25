@@ -1,7 +1,25 @@
-import { MARGINS, PAGE_NUMBER_STYLES, PAPERS, type PageNumberStyle, columnCount, getPageDef, headerFooterText, marginOf, paperOf, setColumns, setHeaderFooterText, setPageDef, setPageNumber } from '../../../doc/ops/page';
-import { askText } from '../../dialog';
+import {
+  MARGINS,
+  PAGE_BORDERS,
+  PAGE_NUMBER_STYLES,
+  PAPERS,
+  type PageNumberStyle,
+  columnCount,
+  getPageDef,
+  marginOf,
+  pageBorderFill,
+  paperOf,
+  setColumns,
+  setPageBorder,
+  setPageDef,
+  setPageFill,
+  setPageNumber,
+} from '../../../doc/ops/page';
+import { openHeaderFooterSheet } from '../../doc-tools';
 import { h } from '../../dom';
-import { Bindings, buttonRow, chips, section } from '../controls';
+import { Bindings, buttonRow, chips, section, swatches } from '../controls';
+
+const PAGE_COLORS = ['#fffdf5', '#fff8e1', '#fce8e6', '#e6f4ea', '#e8f0fe', '#f3e8fd', '#f1f3f4'];
 import type { TabDef } from '../context';
 
 export const pageTab: TabDef = {
@@ -13,14 +31,8 @@ export const pageTab: TabDef = {
     const sec = () => ed.caretPos?.sec ?? 0;
     const def = () => (ed.document ? getPageDef(ed.document, sec()) : null);
     const page = (patch: Parameters<typeof setPageDef>[2]) => ed.command((doc) => setPageDef(doc, sec(), patch));
-    const editHf = async (isHeader: boolean) => {
-      const doc = ed.document;
-      if (!doc) return;
-      const name = isHeader ? '머리말' : '꼬리말';
-      const text = await askText(`${name} (모든 쪽 가운데)`, headerFooterText(doc, sec(), isHeader), '넣기');
-      if (text === null) return;
-      ed.command((d) => setHeaderFooterText(d, sec(), isHeader, text, 'center'));
-    };
+    const editHf = (isHeader: boolean) => void openHeaderFooterSheet(ed, { sec: sec(), isHeader, applyTo: 0 });
+    const border = () => (ed.document ? pageBorderFill(ed.document, sec()) : { border: null, fill: null });
     let numberAlign: 'left' | 'center' | 'right' = 'center';
     let numberStyle: PageNumberStyle | null = null;
     const putNumber = () => numberStyle && ed.command((doc) => setPageNumber(doc, sec(), numberStyle!, numberAlign));
@@ -76,10 +88,25 @@ export const pageTab: TabDef = {
       section(
         '머리말·꼬리말',
         buttonRow(b, [
-          { label: '머리말', content: '머리말 쓰기', onClick: () => void editHf(true) },
-          { label: '꼬리말', content: '꼬리말 쓰기', onClick: () => void editHf(false) },
+          { label: '머리말', content: '머리말 고치기', onClick: () => editHf(true) },
+          { label: '꼬리말', content: '꼬리말 고치기', onClick: () => editHf(false) },
         ]),
-        h('p.panel-note', {}, '비워 두고 넣으면 지워져요.'),
+        h('p.panel-note', {}, '문서에서 머리말·꼬리말이나 각주를 눌러도 바로 고칠 수 있어요.'),
+      ),
+      section(
+        '쪽 테두리',
+        chips(
+          b,
+          PAGE_BORDERS.map((p) => ({
+            label: p.label,
+            active: () => border().border === p.id,
+            onClick: () => ed.command((doc) => setPageBorder(doc, sec(), p.id)),
+          })),
+        ),
+      ),
+      section(
+        '쪽 배경',
+        swatches(b, PAGE_COLORS, () => border().fill ?? undefined, (c) => ed.command((doc) => setPageFill(doc, sec(), c)), '배경 없음'),
       ),
       section(
         '쪽 번호',

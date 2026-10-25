@@ -274,6 +274,18 @@ export class EditableDocument {
     }
   }
 
+  /** HTML을 붙여 넣고 붙인 뒤의 캐럿 위치를 돌려준다. */
+  pasteHtml(pos: DocPos, html: string): DocPos {
+    const r = parse<{ ok: boolean; paraIdx?: number; cellParaIdx?: number; charOffset?: number }>(
+      inCell(pos)
+        ? this.raw.pasteHtmlInCellByPath(pos.sec, pos.para, cellPathJson(pos), pos.offset, html)
+        : this.raw.pasteHtml(pos.sec, pos.para, pos.offset, html),
+    );
+    if (!r.ok) throw new Error('paste failed');
+    if (inCell(pos)) return r.cellParaIdx !== undefined ? withInnerPara(pos, r.cellParaIdx, r.charOffset ?? 0) : pos;
+    return { sec: pos.sec, para: r.paraIdx ?? pos.para, offset: r.charOffset ?? pos.offset };
+  }
+
   /** 문서 전체(표 안 포함)에서 찾는다. */
   search(query: string): SearchMatch[] {
     if (!query) return [];
