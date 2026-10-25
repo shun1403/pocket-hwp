@@ -35,26 +35,51 @@ export async function createBackup(): Promise<{ zip: Uint8Array; count: number; 
   return { zip: buildZip(files), count: entries.length, ids: entries.map((e) => e.id) };
 }
 
+const isDocFile = (name: string) => /\.hwpx?$/i.test(name);
+
+/**
+ * 백업 목록은 다른 사람이 만든 파일일 수도 있으니 모양을 확인하고, 맞지 않는 항목은 버린다.
+ * (형식이 hwp/hwpx가 아니면 다음 백업 때 파일 이름에 경로가 섞일 수 있다.)
+ */
+export function readManifest(bytes: Uint8Array | undefined, now: number): Map<string, Manifest['documents'][number]> {
+  const out = new Map<string, Manifest['documents'][number]>();
+  if (!bytes) return out;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return out;
+  }
+  const docs = (parsed as Partial<Manifest> | null)?.documents;
+  if (!Array.isArray(docs)) return out;
+  for (const d of docs as Record<string, unknown>[]) {
+    if (!d || typeof d.file !== 'string' || typeof d.id !== 'string' || !/^[\w-]{1,64}$/.test(d.id)) continue;
+    if (d.format !== 'hwp' && d.format !== 'hwpx') continue;
+    const updatedAt = typeof d.updatedAt === 'number' && Number.isFinite(d.updatedAt) ? Math.min(d.updatedAt, now) : now;
+    const name = typeof d.name === 'string' && d.name.trim() ? safeFileName(d.name).slice(0, 200) : d.file;
+    out.set(d.file, { id: d.id, file: d.file, name, format: d.format, updatedAt, edited: d.edited === true });
+  }
+  return out;
+}
+
 /**
  * 백업 ZIP을 보관함으로 되살린다. 이미 있는 문서는 백업이 더 새것일 때만 바꾼다.
  * Pocket HWP 백업이 아닌 ZIP이라도 안의 HWP/HWPX 파일은 모두 가져온다.
  */
 export async function restoreBackup(zip: Uint8Array): Promise<{ added: number; updated: number; skipped: number }> {
-  const files = await readZip(zip);
-  const manifestFile = files.find((f) => f.name === MANIFEST);
-  const manifest = manifestFile ? (JSON.parse(new TextDecoder().decode(manifestFile.bytes)) as Manifest) : null;
-  const byFile = new Map(manifest?.documents.map((d) => [d.file, d]) ?? []);
+  const files = await readZip(zip, { accept: (name) => name === MANIFEST || isDocFile(name) });
   const now = Date.now();
+  const byFile = readManifest(files.find((f) => f.name === MANIFEST)?.bytes, now);
   const result = { added: 0, updated: 0, skipped: 0 };
   for (const f of files) {
-    if (f.name === MANIFEST || !/\.(hwpx?)$/i.test(f.name)) continue;
+    if (f.name === MANIFEST || !isDocFile(f.name)) continue;
     const meta = byFile.get(f.name);
     const existing = meta ? await library.get(meta.id) : undefined;
     if (existing && existing.updatedAt >= (meta?.updatedAt ?? 0)) {
       result.skipped += 1;
       continue;
     }
-    const name = meta?.name ?? f.name.split('/').pop()!;
+    const name = meta?.name ?? safeFileName(f.name.split('/').pop()!);
     await library.put({
       id: meta?.id ?? newId(),
       name,

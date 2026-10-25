@@ -18,15 +18,19 @@ on:
       - android/**
       - capacitor.config.ts
 
+# 빌드는 읽기 권한만 갖는다. Releases에 올리는 publish 작업만 쓰기 권한을 받는다.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   apk:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+        with:
+          persist-credentials: false
+      # 외부 액션은 태그가 바뀌어도 같은 코드를 쓰도록 커밋으로 고정한다.
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
@@ -58,10 +62,11 @@ jobs:
 
       - name: 정렬·서명
         env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # PR은 합치기 전 코드로 빌드하므로 진짜 서명 키를 건네지 않는다 (임시 키로 서명).
+          KEYSTORE_BASE64: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
+          KEYSTORE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          KEY_ALIAS: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEY_ALIAS || '' }}
+          KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEY_PASSWORD || '' }}
           VERSION: ${{ steps.ver.outputs.name }}
         run: |
           set -euo pipefail
@@ -89,9 +94,18 @@ jobs:
           name: pocket-hwp-apk
           path: ${{ env.APK }}
 
-      - name: GitHub Releases에 올리기
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: apk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          files: ${{ env.APK }}
+          name: pocket-hwp-apk
+      - name: GitHub Releases에 올리기
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          files: PocketHWP-*.apk
           generate_release_notes: true

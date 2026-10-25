@@ -149,10 +149,26 @@ rhwp 스냅샷(`saveSnapshot`/`restoreSnapshot`)을 씁니다. 연속 타이핑�
   ZIP 안에는 문서 파일과 `pocket-hwp-backup.json` 목록이 들어 있어, 다른 앱에서 풀어도 바로 열 수 있습니다.
 - 아이폰 사파리 탭에서 열면 홈 화면에 추가하라고 안내합니다 (탭과 홈 화면 앱은 보관함이 따로입니다).
 
+### 보안
+
+- 문서는 기기 밖으로 나가지 않습니다. 앱에는 서버가 없고, 문서는 캔버스로 그리며 문서 안 링크를 열지 않습니다.
+- UI는 `h()`로 DOM을 만들고 글은 텍스트 노드로만 넣습니다. `innerHTML`은 쓰지 않습니다.
+  수식 미리보기 SVG는 `<img>`로 보여 줘서 스크립트가 실행되지 않습니다.
+- 암호 문서는 보관함에도 같은 암호로 저장하고, 암호와 첫 쪽 썸네일은 남기지 않습니다.
+- 백업 ZIP은 남이 만든 파일일 수 있다고 보고 읽습니다. 한글 문서와 목록만 풀고, 푼 크기에 한도를 두며(압축 폭탄),
+  목록의 id·형식·이름을 확인합니다 (`app/backup.ts`, `export/zip.ts`).
+- 안드로이드는 `content://` 문서만 받습니다. `file://` 주소나 이 앱의 FileProvider 주소가 오면 버립니다
+  (다른 앱이 이 앱의 내부 파일을 열게 만드는 것을 막기 위해). FileProvider는 공유용 캐시 폴더(`share/`)만 내줍니다.
+- CI는 읽기 권한으로 돌고, Releases에 올리는 작업만 쓰기 권한을 받습니다. PR 빌드에는 서명 키를 주지 않습니다.
+  외부 GitHub 액션은 커밋 SHA로 고정합니다.
+- 서명 키(`*.jks`, `*.keystore`, `*.b64`)는 `.gitignore`로 막아 두었습니다.
+
+보안 문제를 발견하면 [SECURITY.md](../SECURITY.md)를 보세요.
+
 ### 받은 파일
 
 - 안드로이드: `MainActivity`가 `content://` 문서를 앱 캐시에 원래 이름으로 복사하고 `file://` VIEW 인텐트로 바꿔
-  넘깁니다. 웹 코드는 Capacitor App 플러그인의 `appUrlOpen`으로 받습니다. 공유(SEND)도 같은 경로입니다.
+  넘깁니다(밖에서 온 `file://` 주소는 받지 않습니다). 웹 코드는 Capacitor App 플러그인의 `appUrlOpen`으로 받습니다. 공유(SEND)도 같은 경로입니다.
 - iOS: `CFBundleDocumentTypes`/`UTImportedTypeDeclarations`로 `com.hancom.hwp`·`com.hancom.hwpx`를 등록했고,
   문서는 앱 Inbox로 복사되어 `file://` 주소로 들어옵니다.
 - 데스크톱 PWA: manifest `file_handlers` + `launchQueue`.

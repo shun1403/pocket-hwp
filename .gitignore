@@ -5,3 +5,11 @@ dist/
 coverage/
 test-results/
 dist-preview/
+
+# 서명 키·비밀 값은 절대 올리지 않는다 (docs/DEVELOPMENT.md "안드로이드 APK 릴리스")
+*.jks
+*.keystore
+*.p12
+*.b64
+.env
+.env.*
