@@ -171,7 +171,7 @@ async function setupNativeChrome(): Promise<void> {
 }
 
 function registerServiceWorker(): void {
-  if (isNative || import.meta.env.DEV || !('serviceWorker' in navigator)) return;
+  if (isNative || import.meta.env.DEV || import.meta.env.VITE_SANDBOXED || !('serviceWorker' in navigator)) return;
   window.addEventListener('load', () => {
     void navigator.serviceWorker.register('./sw.js').catch(() => undefined);
   });

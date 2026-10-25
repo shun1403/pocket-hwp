@@ -23,8 +23,9 @@
   font-family: Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
 }
 
+/* 다크 테마: 시스템 설정을 따르되, 앱을 띄운 쪽이 data-theme으로 정하면 그것을 따른다 */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --brand: #7c9cff;
     --brand-strong: #a3bbff;
     --brand-weak: #253055;
@@ -36,7 +37,23 @@
     --line: #2f333b;
     --desk: #0b0c0e;
     --shadow: 0 6px 24px rgb(0 0 0 / 0.5);
+    color-scheme: dark;
   }
+}
+
+:root[data-theme='dark'] {
+  --brand: #7c9cff;
+  --brand-strong: #a3bbff;
+  --brand-weak: #253055;
+  --bg: #121316;
+  --surface: #1b1d22;
+  --surface-2: #262930;
+  --text: #eceef2;
+  --text-2: #a2a8b4;
+  --line: #2f333b;
+  --desk: #0b0c0e;
+  --shadow: 0 6px 24px rgb(0 0 0 / 0.5);
+  color-scheme: dark;
 }
 
 * {
@@ -1000,6 +1017,57 @@ input:focus-visible {
 
 .page-thumb.current canvas {
   outline: 3px solid var(--brand);
+}
+
+.dialog-message {
+  margin: 0 10px 16px !important;
+  white-space: pre-line;
+  color: var(--text-2);
+}
+
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.text-field {
+  height: 48px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 0 14px;
+  font: inherit;
+  font-size: 16px;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 8px 4px;
+}
+
+.dialog-form .dialog-actions {
+  padding: 8px 0 4px;
+}
+
+.dialog-actions > button {
+  flex: 1;
+  width: auto;
+  margin: 0;
+}
+
+.secondary-btn {
+  height: 48px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-weight: 700;
+}
+
+.danger-btn {
+  background: var(--danger);
 }
 
 /* ───────── 읽기 모드 ───────── */

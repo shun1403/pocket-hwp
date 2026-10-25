@@ -2,6 +2,7 @@ import { backScope } from '../app/back';
 import type { DocumentSession } from '../app/session';
 import { Editor, type EditorState } from '../editor/editor';
 import { copyText, readText } from '../platform/clipboard';
+import { askText } from './dialog';
 import { openExportSheet, openInfoSheet, openPagesSheet } from './doc-sheets';
 import { h, keepFocus } from './dom';
 import { openFormatSheet, openInsertSheet } from './edit-sheets';
@@ -101,7 +102,7 @@ export class DocScreen {
       keepFocus(h('button.icon-btn', { 'aria-label': label, title: label, onclick: onClick, disabled }, icon(name)));
     const titleBox = h(
       'button.title-box',
-      { onclick: () => this.rename(), 'aria-label': '문서 이름 바꾸기' },
+      { onclick: () => void this.rename(), 'aria-label': '문서 이름 바꾸기' },
       this.title,
       this.status,
     );
@@ -133,14 +134,14 @@ export class DocScreen {
       row('pages', '쪽 모아 보기', () => openPagesSheet(this.session, this.editor.view)),
       row('zoomFit', '쪽 전체 보기', () => this.editor.view.setZoomFactor(1)),
       row('text', '본문 폭에 맞추기 (글자 크게)', () => this.editor.view.fitBody(window.innerHeight / 2)),
-      row('edit', '이름 바꾸기', () => this.rename()),
+      row('edit', '이름 바꾸기', () => void this.rename()),
       row('info', '문서 정보', () => openInfoSheet(this.session)),
     );
     sheet.open();
   }
 
   private async rename(): Promise<void> {
-    const next = prompt('문서 이름', this.session.name.replace(/\.hwpx?$/i, ''));
+    const next = await askText('문서 이름', this.session.name.replace(/\.hwpx?$/i, ''), '바꾸기');
     if (!next) return;
     await this.session.rename(next);
     this.title.textContent = this.session.name;

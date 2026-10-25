@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite --host",
     "build": "tsc --noEmit && vite build",
+    "build:preview": "node scripts/build-preview.mjs",
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

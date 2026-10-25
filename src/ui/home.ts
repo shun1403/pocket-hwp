@@ -1,4 +1,5 @@
 import { type LibrarySummary, library } from '../platform/library';
+import { askConfirm } from './dialog';
 import { h } from './dom';
 import { icon } from './icons';
 import { Sheet } from './sheet';
@@ -124,7 +125,13 @@ export class HomeScreen {
         {
           onclick: async () => {
             sheet.close();
-            if (!confirm(`“${item.name}”을(를) 목록과 앱 보관함에서 지울까요?`)) return;
+            const ok = await askConfirm({
+              title: '보관함에서 삭제',
+              message: `“${item.name}”을(를) 최근 목록과 앱 보관함에서 지울까요? 다른 앱에 있는 원본 파일은 지워지지 않아요.`,
+              confirmLabel: '삭제',
+              danger: true,
+            });
+            if (!ok) return;
             await library.remove(item.id);
             void this.refresh();
           },

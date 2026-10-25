@@ -4,6 +4,7 @@ import { documentText, exportDocument, exportPdf } from '../export/exporters';
 import { MIME, type DocFormat, baseName } from '../platform/bytes';
 import { isNative, shareFile } from '../platform/files';
 import type { PageView } from '../view/page-view';
+import { askConfirm } from './dialog';
 import { h } from './dom';
 import { icon } from './icons';
 import { Sheet } from './sheet';
@@ -17,8 +18,12 @@ async function deliver(name: string, bytes: Uint8Array, mime: string): Promise<v
 async function sendDocument(session: DocumentSession, format: DocFormat): Promise<void> {
   const { bytes, lossWarnings } = exportDocument(session.doc.raw, format);
   if (lossWarnings.length > 0) {
-    const detail = lossWarnings.slice(0, 5).join('\n· ');
-    if (!confirm(`${format.toUpperCase()}로 저장하면 일부 내용이 빠질 수 있어요.\n· ${detail}\n\n그래도 보낼까요?`)) return;
+    const ok = await askConfirm({
+      title: '일부 내용이 빠질 수 있어요',
+      message: `${format.toUpperCase()}로 저장하면 다음 내용이 빠질 수 있어요.\n· ${lossWarnings.slice(0, 5).join('\n· ')}`,
+      confirmLabel: '그래도 보내기',
+    });
+    if (!ok) return;
   }
   await deliver(`${baseName(session.name)}.${format}`, bytes, MIME[format]);
 }
@@ -43,6 +48,11 @@ export function openExportSheet(session: DocumentSession): void {
       icon(iconName),
       h('span.row-text', {}, h('span', {}, title), h('span.row-sub', {}, sub)),
     );
+  if (import.meta.env.VITE_SANDBOXED) {
+    sheet.body.append(
+      h('p.sheet-note', {}, 'Claude 미리보기 안에서는 파일을 내보낼 수 없어요. 설치한 앱이나 웹 버전에서 보내기를 써 주세요.'),
+    );
+  }
   sheet.body.append(
     row('share', '한글 문서 (.hwp)', '한컴오피스·다른 앱에서 열 수 있어요', () => sendDocument(session, 'hwp')),
     row('share', 'HWPX 문서 (.hwpx)', '개방형 한글 형식 (실험적)', () => sendDocument(session, 'hwpx')),

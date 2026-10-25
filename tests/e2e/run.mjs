@@ -191,6 +191,14 @@ await step('시트를 닫자마자 다른 시트를 열어도 뒤로 가기 기�
   assert.ok(await page.$('.doc'), '문서 화면이 그대로 있어야 함');
 });
 
+await step('이름 바꾸기는 앱 안 입력 시트로 한다', async () => {
+  await page.click('[aria-label="더보기"]');
+  await page.click('.sheet-row:has-text("이름 바꾸기")');
+  await page.fill('.text-field', '모바일 테스트');
+  await page.click('.dialog-form button[type="submit"]');
+  await page.waitForFunction(() => document.querySelector('.app-title')?.textContent === '모바일 테스트.hwp');
+});
+
 await step('닫으면 최근 문서에 “편집됨”으로 남고 다시 열면 내용이 그대로다', async () => {
   await page.click('[aria-label="문서 닫기"]');
   await page.waitForSelector('.home:not([hidden]) .recent-item');
