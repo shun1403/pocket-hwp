@@ -1,5 +1,6 @@
 import { documentStats } from '../../../doc/ops/inserts';
 import { documentText } from '../../../export/exporters';
+import { openBookmarksSheet, openOutlineSheet } from '../../doc-tools';
 import { h } from '../../dom';
 import { Bindings, section, tiles } from '../controls';
 import type { TabDef } from '../context';
@@ -37,6 +38,8 @@ export const viewTab: TabDef = {
           { label: '찾기·바꾸기', icon: 'search', onClick: () => ctx.openSearch() },
           { label: '읽기 모드', icon: 'book', onClick: () => ctx.openReader() },
           { label: '쪽 모아 보기', icon: 'pages', onClick: () => ctx.openPages() },
+          { label: '목차', icon: 'list', onClick: () => openOutlineSheet(ed) },
+          { label: '책갈피', icon: 'bookmark', onClick: () => openBookmarksSheet(ed) },
           { label: '문서 정보', icon: 'info', onClick: () => ctx.openInfo() },
         ]),
       ),

@@ -1,13 +1,14 @@
 import { backScope } from '../app/back';
 import type { DocumentSession } from '../app/session';
 import { Editor, type EditorState } from '../editor/editor';
-import { copyText, readText } from '../platform/clipboard';
+import { copyText, readHtml, readText } from '../platform/clipboard';
 import { isNative } from '../platform/files';
 import { askText } from './dialog';
 import { openExportSheet, openInfoSheet, openPagesSheet, saveToOriginal } from './doc-sheets';
 import { fieldCount } from '../doc/ops/fields';
 import { FormFill } from './form-fill';
 import { type VersionActions, openVersionsSheet } from './versions-sheet';
+import { openBookmarksSheet, openChartSheet, openHeaderFooterSheet, openLinkSheet, openNoteSheet, openOutlineSheet, openShapeSheet } from './doc-tools';
 import { maybeShowEditTips, openTips } from './tips';
 import { h, keepFocus } from './dom';
 import { icon } from './icons';
@@ -61,6 +62,11 @@ export class DocScreen {
       toggleChrome: () => this.el.classList.toggle('immersive'),
       selectionMenu: (a) => this.positionMenu(a),
       objectSelected: (obj, anchor) => this.showObjectMenu(obj, anchor),
+      special: (hit) => {
+        if (hit.kind === 'headerFooter') void openHeaderFooterSheet(this.editor, hit.target);
+        else void openNoteSheet(this.editor, hit.target);
+      },
+      link: (pos, link) => openLinkSheet(this.editor, pos, link),
       shortcut: (k) => {
         if (k === 's') {
           if (session.sourceName) void saveToOriginal(session);
@@ -214,6 +220,8 @@ export class DocScreen {
       h('button.sheet-row', { onclick: () => (sheet.close(), run()) }, icon(name), label);
     sheet.body.append(
       row('form', '서식 채우기 (빈칸 차례로 채우기)', () => this.openFormFill()),
+      row('list', '목차 (제목으로 이동)', () => openOutlineSheet(this.editor)),
+      row('bookmark', '책갈피', () => openBookmarksSheet(this.editor)),
       row('pages', '쪽 모아 보기', () => openPagesSheet(this.session, this.editor.view)),
       row('zoomFit', '쪽 전체 보기', () => this.editor.view.setZoomFactor(1)),
       row('text', '본문 폭에 맞추기 (글자 크게)', () => this.editor.view.fitBody(window.innerHeight / 2)),
@@ -359,9 +367,25 @@ export class DocScreen {
       const ed = this.editor;
       const item = (label: string, run: () => void) => keepFocus(h('button', { role: 'menuitem', onclick: run }, label));
       const items: HTMLElement[] = [];
-      if (obj.kind !== 'equation') {
+      if (obj.kind !== 'equation' && obj.kind !== 'chart') {
         items.push(item('크게', () => ed.objectCommand((doc, o) => scaleObject(doc, o, 1.2))));
         items.push(item('작게', () => ed.objectCommand((doc, o) => scaleObject(doc, o, 1 / 1.2))));
+      }
+      if (obj.kind === 'shape' || obj.kind === 'line' || obj.kind === 'group') {
+        items.push(
+          item('모양', () => {
+            ed.clearObject();
+            openShapeSheet(ed, obj);
+          }),
+        );
+      }
+      if (obj.kind === 'chart') {
+        items.push(
+          item('차트 값 고치기', () => {
+            ed.clearObject();
+            openChartSheet(ed, obj);
+          }),
+        );
       }
       if (obj.kind === 'image' && ed.document) {
         const inline = isImageInline(ed.document, obj);
@@ -410,8 +434,9 @@ export class DocScreen {
       item('복사', copy),
       editing &&
         item('붙여넣기', async () => {
-          const text = await readText();
-          if (text) this.editor.insertText(text);
+          const [text, html] = await Promise.all([readText(), readHtml()]);
+          if (html) this.editor.pasteHtml(html, text ?? '');
+          else if (text) this.editor.insertText(text);
           else toast('붙여 넣을 글이 없어요.');
         }),
       item('모두 선택', () => this.editor.selectAll()),

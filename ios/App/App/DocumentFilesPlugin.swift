@@ -13,6 +13,7 @@ class MainViewController: CAPBridgeViewController {
 ///
 /// open: 문서 선택기로 파일을 "제자리에서" 열고(복사하지 않음) 보안 북마크를 돌려준다.
 /// write: 그 북마크로 같은 파일에 덮어쓴다. 파일 앱·iCloud Drive·다른 저장소 앱 모두 같은 방식이다.
+/// print: 웹 코드가 만든 PDF를 iOS 인쇄 화면에 넘긴다.
 @objc(DocumentFilesPlugin)
 public class DocumentFilesPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelegate {
     public let identifier = "DocumentFilesPlugin"
@@ -20,6 +21,7 @@ public class DocumentFilesPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerD
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "write", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "print", returnType: CAPPluginReturnPromise),
     ]
 
     private static let maxBytes = 200 * 1024 * 1024
@@ -100,6 +102,29 @@ public class DocumentFilesPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerD
             call.resolve(result)
         } catch {
             call.reject("원래 파일에 저장하지 못했어요.", "WRITE_FAILED", error)
+        }
+    }
+
+    @objc func print(_ call: CAPPluginCall) {
+        guard let text = call.getString("data"), let data = Data(base64Encoded: text) else {
+            call.reject("data 가 필요해요.", "BAD_REQUEST")
+            return
+        }
+        let name = call.getString("name") ?? "문서"
+        DispatchQueue.main.async {
+            let info = UIPrintInfo(dictionary: nil)
+            info.outputType = .general
+            info.jobName = name
+            let controller = UIPrintInteractionController.shared
+            controller.printInfo = info
+            controller.printingItem = data
+            controller.present(animated: true) { _, _, error in
+                if let error = error {
+                    call.reject("인쇄하지 못했어요.", "PRINT_FAILED", error)
+                } else {
+                    call.resolve()
+                }
+            }
         }
     }
 

@@ -12,6 +12,8 @@ import {
   withInnerPara,
   wordBounds,
 } from '../doc/position';
+import { type LinkInfo, linkAt } from '../doc/ops/links';
+import { type SpecialHit, specialAt } from '../doc/ops/notes';
 import { type PageObject, objectAt } from '../doc/ops/objects';
 import { haptic } from '../platform/files';
 import { attachGestures } from '../view/gestures';
@@ -44,6 +46,10 @@ export interface EditorHost {
   shortcut(key: string): boolean;
   /** 개체를 골랐다 (메뉴를 띄울 화면 좌표). null이면 선택 해제 */
   objectSelected(obj: PageObject | null, anchor: { x: number; top: number; bottom: number } | null): void;
+  /** 편집 중 머리말·꼬리말·각주를 눌렀다 */
+  special(hit: SpecialHit): void;
+  /** 링크를 눌렀다 */
+  link(pos: DocPos, link: LinkInfo): void;
 }
 
 type Move = 'left' | 'right' | 'up' | 'down' | 'home' | 'end';
@@ -80,7 +86,7 @@ export class Editor {
       actions: (a) => this.applyInput(a),
       composing: (t) => this.showComposition(t),
       key: (e) => this.onKey(e),
-      paste: (t) => this.insertText(t),
+      paste: (t, html) => (html ? this.pasteHtml(html, t) : this.insertText(t)),
     });
     host.append(this.view.scroller, this.input.el);
     this.view.onLayout = () => this.paint(false);
@@ -136,11 +142,14 @@ export class Editor {
         this.paint(false);
         return;
       }
-      // 두 번 탭(확대)과 구분하려고 잠깐 기다린다.
+      // 두 번 탭(확대)과 구분하려고 잠깐 기다린다. 링크 위면 링크를 연다.
       window.clearTimeout(this.viewTapTimer);
-      this.viewTapTimer = window.setTimeout(() => this.hostApi.toggleChrome(), 260);
+      this.viewTapTimer = window.setTimeout(() => {
+        if (!this.openLinkAt(x, y)) this.hostApi.toggleChrome();
+      }, 260);
       return;
     }
+    if (this.specialAt(x, y)) return;
     if (this.selectObjectAt(x, y)) return;
     const pos = this.hit(x, y);
     if (!pos) return;
@@ -148,6 +157,31 @@ export class Editor {
     this.caretHandle = true;
     this.setCaret(pos, null);
     this.input.focus();
+  }
+
+  /** 머리말·꼬리말·각주를 눌렀으면 그걸 고치게 한다. */
+  private specialAt(clientX: number, clientY: number): boolean {
+    const p = this.view.clientToPage(clientX, clientY);
+    const hit = p && this.doc ? specialAt(this.doc, p.page, p.x, p.y) : null;
+    if (!hit) return false;
+    this.input.commitComposition();
+    this.hostApi.special(hit);
+    return true;
+  }
+
+  private openLinkAt(clientX: number, clientY: number): boolean {
+    const pos = this.hit(clientX, clientY);
+    const link = pos && this.doc ? linkAt(this.doc, pos) : null;
+    if (!pos || !link) return false;
+    this.hostApi.link(pos, link);
+    return true;
+  }
+
+  /** 캐럿 자리에 걸린 링크 */
+  linkAtCaret(): { pos: DocPos; link: LinkInfo } | null {
+    const pos = this.caret;
+    const link = pos && this.doc ? linkAt(this.doc, pos) : null;
+    return pos && link ? { pos, link } : null;
   }
 
   /** 탭한 자리에 그림·수식·글상자가 있으면 고른다. */
@@ -474,6 +508,21 @@ export class Editor {
     this.pendingChar = pending;
   }
 
+  /**
+   * 웹 페이지·다른 문서에서 복사한 글을 모양(굵게·표 등)과 함께 붙인다.
+   * 엔진이 HTML을 읽지 못하면 글자만 붙인다.
+   */
+  pasteHtml(html: string, fallbackText: string): void {
+    if (this.mode !== 'edit') return;
+    const ok = this.edit(null, () => {
+      const doc = this.doc!;
+      const sel = this.selection;
+      const at = sel ? doc.deleteRange(sel[0], sel[1]) : this.caret!;
+      return doc.pasteHtml(at, html);
+    });
+    if (!ok && fallbackText) this.insertText(fallbackText);
+  }
+
   enter(): void {
     if (this.mode !== 'edit') return;
     this.edit(null, () => {
@@ -637,6 +686,15 @@ export class Editor {
     this.input.commitComposition();
     this.anchor = start;
     this.caret = end;
+    this.paint(true);
+  }
+
+  /** 문서의 한 자리로 가서 보여 준다 (목차·책갈피 이동). 선택은 만들지 않는다. */
+  goTo(pos: DocPos): void {
+    this.input.commitComposition();
+    this.anchor = null;
+    this.object = null;
+    this.caret = pos;
     this.paint(true);
   }
 

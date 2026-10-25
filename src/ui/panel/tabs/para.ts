@@ -1,5 +1,8 @@
 import type { ParaProps } from '../../../doc/editable';
-import { BULLETS, NUMBERING_PRESETS, bulletId, numberingId } from '../../../doc/ops/lists';
+import { BULLETS, NUMBERING_PRESETS, bulletId, numberingId, restartNumbering } from '../../../doc/ops/lists';
+import { inCell } from '../../../doc/position';
+import { askText } from '../../dialog';
+import { toast } from '../../toast';
 import { h } from '../../dom';
 import { Bindings, buttonRow, chips, section, stepper } from '../controls';
 import type { TabDef } from '../context';
@@ -25,6 +28,17 @@ export const paraTab: TabDef = {
     });
     const round = (v: number) => Math.round(v * 10) / 10;
     const listKind = () => para().headType ?? 'None';
+    const restart = async () => {
+      const caret = ed.caretPos;
+      if (!caret || inCell(caret)) {
+        toast('번호 새로 시작은 표 밖 본문 문단에서 쓸 수 있어요.');
+        return;
+      }
+      const v = await askText('시작 번호', '1', '새로 시작');
+      const n = Number(v);
+      if (!v || !Number.isInteger(n) || n < 1) return;
+      ed.command((doc, c) => restartNumbering(doc, c, n));
+    };
 
     const el = h(
       'div.tab-body',
@@ -93,6 +107,14 @@ export const paraTab: TabDef = {
             content: '없애기',
             disabled: () => listKind() === 'None',
             onClick: () => apply({ headType: 'None' }),
+          },
+        ]),
+        buttonRow(b, [
+          {
+            label: '이 문단부터 번호 새로 시작',
+            content: '번호 새로 시작',
+            disabled: () => listKind() !== 'Number' && listKind() !== 'Outline',
+            onClick: () => void restart(),
           },
         ]),
       ),

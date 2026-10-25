@@ -27,3 +27,16 @@ export async function readText(): Promise<string | null> {
     return null;
   }
 }
+
+/** 클립보드의 HTML (웹에서 권한이 있을 때만). 없으면 null */
+export async function readHtml(): Promise<string | null> {
+  if (isNative || !navigator.clipboard?.read) return null;
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      if (item.types.includes('text/html')) return await (await item.getType('text/html')).text();
+    }
+  } catch {
+    // 권한이 없거나 지원하지 않는 브라우저
+  }
+  return null;
+}

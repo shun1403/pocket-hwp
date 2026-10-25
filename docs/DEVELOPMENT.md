@@ -139,6 +139,20 @@ rhwp의 글자 위치(charOffset)에는 개체(각주·수식·그림 등)가 �
   누름틀이 없으면 `getPageControlLayout`의 표 칸 중 빈 칸을 대신 돕니다.
 - 쪽 번호(`setPageNumber`)는 꼬리말 필드(`insertFieldInHf`, 1 = 현재 쪽, 2 = 전체 쪽)라서 쪽마다 알맞은 번호로 그려지고 저장해도 남습니다.
 
+### 표·도형·쪽 꾸미기에서 알아 둘 엔진 특성
+
+- `setCellProperties`·`setPageBorderFill`은 넘기지 않은 테두리·항목을 기본값(가장 가는 선, 테두리 없음)으로 되돌린다.
+  그래서 `doc/ops/table.ts`·`page.ts`는 지금 값을 읽어 바꿀 것만 덮어써서 넘긴다(셀 배경색을 칠해도 테두리가 그대로 남게).
+- 도형 색(`borderColor`·`fillBgColor`)은 0x00BBGGRR 정수다(`hwpColor`/`cssColor`).
+- 캡션(`attachCaptionAt`)은 그리기 개체(도형·글상자)에만 붙는다.
+- 차트 값은 `getChartData`가 주는 모양(`labels`, `series[{name, values}]`) 그대로 `setChartData`에 넘긴다.
+  엔진은 HWPX 차트 XML과 HWP용 OLE 사본을 함께 고칠 수 없으면 아무것도 쓰지 않고 `invalid` 이유를 돌려준다.
+- 머리말·꼬리말·각주는 캐럿으로 직접 고치지 않고, 누르면 여러 줄 입력 시트로 고친다(`doc/ops/notes.ts`).
+  바뀌지 않은 줄은 건드리지 않아서 그 줄의 쪽 번호 필드·글자 모양이 남는다.
+- 붙여넣기는 클립보드에 HTML이 있으면 `pasteHtml`로 모양째 넣고, 엔진이 읽지 못하면 글자만 넣는다.
+- 인쇄는 앱에서 PDF를 만들어 `DocumentFiles.print`(안드로이드 PrintManager, iOS UIPrintInteractionController)로 넘기고,
+  브라우저에서는 쪽 그림을 인쇄용 화면에 깔고 `window.print()`를 연다.
+
 ### 실행 취소
 
 rhwp 스냅샷(`saveSnapshot`/`restoreSnapshot`)을 씁니다. 연속 타이핑은 한 단계로 묶고, 버려진 스냅샷은
@@ -156,7 +170,7 @@ IndexedDB(`platform/db.ts`, 버전 2)에는 문서(`documents`) 말고도 문서
 
 ### 원래 파일에 저장
 
-- 안드로이드: 앱 안 플러그인 `DocumentFilesPlugin.java`(MainActivity에서 등록)가 `ACTION_OPEN_DOCUMENT`로 열고
+- 안드로이드: 앱 안 플러그인 `DocumentFilesPlugin.java`(MainActivity에서 등록, 인쇄도 맡음)가 `ACTION_OPEN_DOCUMENT`로 열고
   영구 읽기·쓰기 권한을 받아 둡니다. 쓰기는 영구 쓰기 권한이 있는 주소에만 합니다.
 - iOS: `DocumentFilesPlugin.swift`(`MainViewController`에서 등록)가 문서 선택기로 제자리에서 열고 보안 북마크를 보관합니다.
 - 웹: File System Access API(`showOpenFilePicker`) 파일 핸들을 IndexedDB에 둡니다. 크롬·엣지 컴퓨터 브라우저에서만 됩니다.
@@ -207,6 +221,6 @@ Capacitor는 뒤로 버튼 리스너가 없으면 WebView `history.back()`을 �
 
 ## 앞으로 할 일
 
-- 표 크기·테두리 편집, 손가락으로 끌어서 여러 칸 고르기
-- 각주·머리말/꼬리말을 본문처럼 직접 고치기
+- 손가락으로 끌어서 표 여러 칸 고르기, 도형을 끌어서 옮기기·크기 바꾸기
+- 그림·표 캡션 (엔진 지원 뒤)
 - 큰 문서에서 Web Worker로 엔진 옮기기

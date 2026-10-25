@@ -2,10 +2,19 @@ package io.github.pockethwp;
 
 import android.app.Activity;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.content.UriPermission;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Bundle;
+import android.os.CancellationSignal;
+import android.os.ParcelFileDescriptor;
+import android.print.PageRange;
+import android.print.PrintAttributes;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintDocumentInfo;
+import android.print.PrintManager;
 import android.provider.OpenableColumns;
 import android.util.Base64;
 import androidx.activity.result.ActivityResult;
@@ -16,6 +25,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.ByteArrayOutputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 
@@ -24,6 +34,7 @@ import java.io.OutputStream;
  *
  * open: ACTION_OPEN_DOCUMENT 로 고른 문서를 읽고, 가능하면 영구 쓰기 권한을 받아 둔다.
  * write: 영구 쓰기 권한을 가진 주소에만 쓴다. 웹 코드가 아무 주소에나 쓰게 하지 않는다.
+ * print: 웹 코드가 만든 PDF를 안드로이드 인쇄 화면에 넘긴다.
  */
 @CapacitorPlugin(name = "DocumentFiles")
 public class DocumentFilesPlugin extends Plugin {
@@ -114,6 +125,57 @@ public class DocumentFilesPlugin extends Plugin {
             }
         }
         call.resolve(new JSObject());
+    }
+
+    @PluginMethod
+    public void print(PluginCall call) {
+        String data = call.getString("data");
+        String name = call.getString("name", "문서");
+        if (data == null) {
+            call.reject("data 가 필요해요.", "BAD_REQUEST");
+            return;
+        }
+        byte[] pdf = Base64.decode(data, Base64.DEFAULT);
+        getActivity().runOnUiThread(() -> {
+            PrintManager manager = (PrintManager) getContext().getSystemService(Context.PRINT_SERVICE);
+            if (manager == null) {
+                call.reject("이 기기에서는 인쇄할 수 없어요.", "UNAVAILABLE");
+                return;
+            }
+            manager.print(name, new PdfAdapter(pdf, name), new PrintAttributes.Builder().build());
+            call.resolve(new JSObject());
+        });
+    }
+
+    /** 이미 만들어진 PDF 바이트를 그대로 인쇄 서비스에 넘긴다. */
+    private static class PdfAdapter extends PrintDocumentAdapter {
+        private final byte[] pdf;
+        private final String name;
+
+        PdfAdapter(byte[] pdf, String name) {
+            this.pdf = pdf;
+            this.name = name;
+        }
+
+        @Override
+        public void onLayout(PrintAttributes oldAttributes, PrintAttributes newAttributes, CancellationSignal cancel, LayoutResultCallback callback, Bundle extras) {
+            if (cancel.isCanceled()) {
+                callback.onLayoutCancelled();
+                return;
+            }
+            PrintDocumentInfo info = new PrintDocumentInfo.Builder(name + ".pdf").setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT).build();
+            callback.onLayoutFinished(info, true);
+        }
+
+        @Override
+        public void onWrite(PageRange[] pages, ParcelFileDescriptor destination, CancellationSignal cancel, WriteResultCallback callback) {
+            try (FileOutputStream out = new FileOutputStream(destination.getFileDescriptor())) {
+                out.write(pdf);
+                callback.onWriteFinished(new PageRange[] { PageRange.ALL_PAGES });
+            } catch (Exception e) {
+                callback.onWriteFailed(e.getMessage());
+            }
+        }
     }
 
     private static boolean hasWritePermission(ContentResolver resolver, Uri uri) {

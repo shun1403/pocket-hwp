@@ -107,9 +107,15 @@ export function tableOp(doc: EditableDocument, ctx: CellContext, op: TableOp): D
   return cellPos(ctx, findCell(doc, ctx, ...target));
 }
 
+/** 셀 속성 중 일부만 바꾼다. 엔진은 넘기지 않은 테두리를 0(가장 가는 선)으로 되돌리므로 지금 테두리를 함께 넘긴다. */
+function patchCell(doc: EditableDocument, ctx: CellContext, cell: number, patch: Record<string, unknown>): void {
+  const current = JSON.parse(doc.raw.getCellProperties(ctx.sec, ctx.para, ctx.ctrl, cell)) as Record<string, unknown>;
+  const keep = Object.fromEntries(['borderLeft', 'borderRight', 'borderTop', 'borderBottom'].map((k) => [k, current[k]]));
+  doc.raw.setCellProperties(ctx.sec, ctx.para, ctx.ctrl, cell, JSON.stringify({ ...keep, ...patch }));
+}
+
 export function setCellFill(doc: EditableDocument, ctx: CellContext, color: string | null): void {
-  const props = color ? { fillType: 'solid', fillColor: color } : { fillType: 'none' };
-  doc.raw.setCellProperties(ctx.sec, ctx.para, ctx.ctrl, ctx.cell, JSON.stringify(props));
+  patchCell(doc, ctx, ctx.cell, color ? { fillType: 'solid', fillColor: color } : { fillType: 'none' });
 }
 
 /** 표 칸 하나의 자리와 쪽 위 상자 (getTableCellBboxes) */
@@ -194,5 +200,93 @@ export function clearRange(doc: EditableDocument, ctx: CellContext, cells: CellB
     const last: DocPos = { ...first, cellPath: [{ controlIndex: ctx.ctrl, cellIndex: c.cellIdx, cellParaIndex: lastPara }] };
     const end = { ...last, offset: doc.paraLength(last) };
     if (lastPara > 0 || end.offset > 0) doc.deleteRange(first, end);
+  }
+}
+
+/** 칸 너비·줄 높이를 HWPUNIT 만큼 바꾼다 (같은 칸의 줄·칸 전체가 함께 바뀐다). */
+export function resizeCell(doc: EditableDocument, ctx: CellContext, widthDelta: number, heightDelta: number): void {
+  const edit: Record<string, number> = { cellIdx: ctx.cell };
+  if (widthDelta) edit.widthDelta = widthDelta;
+  if (heightDelta) edit.heightDelta = heightDelta;
+  doc.raw.resizeTableCells(ctx.sec, ctx.para, ctx.ctrl, JSON.stringify([edit]));
+}
+
+/** 셀 테두리 모양 (한글 선 종류: 0 없음, 1 실선, 3 점선 / 굵기: 1 = 0.12mm, 7 = 0.5mm) */
+export const CELL_BORDERS = [
+  { id: 'thin', label: '가는 실선', line: { type: 1, width: 1 } },
+  { id: 'thick', label: '굵은 실선', line: { type: 1, width: 7 } },
+  { id: 'dot', label: '점선', line: { type: 3, width: 1 } },
+  { id: 'none', label: '선 없음', line: { type: 0, width: 0 } },
+] as const;
+
+export type CellBorderStyle = (typeof CELL_BORDERS)[number]['id'];
+
+/**
+ * 고른 칸들에 테두리를 건다. outer 면 범위 바깥쪽 변에만 건다.
+ * 이웃 칸과 맞닿은 변은 엔진이 두 칸 모두 맞춰 준다.
+ */
+export function setCellBorders(doc: EditableDocument, ctx: CellContext, cells: CellBox[], style: CellBorderStyle, outer = false, color = '#000000'): void {
+  const spec = CELL_BORDERS.find((b) => b.id === style) ?? CELL_BORDERS[0];
+  const line = { ...spec.line, color };
+  const r0 = Math.min(...cells.map((c) => c.row));
+  const c0 = Math.min(...cells.map((c) => c.col));
+  const r1 = Math.max(...cells.map((c) => c.row + c.rowSpan - 1));
+  const c1 = Math.max(...cells.map((c) => c.col + c.colSpan - 1));
+  for (const c of cells) {
+    const sides: Record<string, typeof line> = {};
+    if (!outer || c.col === c0) sides.borderLeft = line;
+    if (!outer || c.col + c.colSpan - 1 === c1) sides.borderRight = line;
+    if (!outer || c.row === r0) sides.borderTop = line;
+    if (!outer || c.row + c.rowSpan - 1 === r1) sides.borderBottom = line;
+    if (Object.keys(sides).length) patchCell(doc, ctx, c.cellIdx, sides);
+  }
+}
+
+/** 0 → A, 25 → Z, 26 → AA (표 계산식의 칸 이름) */
+export function columnName(col: number): string {
+  let n = col + 1;
+  let s = '';
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+/** 캐럿 칸 위쪽·왼쪽 칸들을 더하거나 평균 내는 계산식 */
+export function quickFormula(ctx: CellContext, fn: 'SUM' | 'AVG', dir: 'up' | 'left'): string | null {
+  if (dir === 'up') {
+    if (ctx.row === 0) return null;
+    const col = columnName(ctx.col);
+    return `=${fn}(${col}1:${col}${ctx.row})`;
+  }
+  if (ctx.col === 0) return null;
+  return `=${fn}(A${ctx.row + 1}:${columnName(ctx.col - 1)}${ctx.row + 1})`;
+}
+
+/** 계산식 결과를 캐럿 칸에 쓴다. 결과를 돌려주고, 식이 틀리면 null */
+export function applyFormula(doc: EditableDocument, ctx: CellContext, formula: string): number | null {
+  const f = formula.trim().startsWith('=') ? formula.trim() : `=${formula.trim()}`;
+  try {
+    const r = JSON.parse(doc.raw.evaluateTableFormula(ctx.sec, ctx.para, ctx.ctrl, ctx.row, ctx.col, f, true)) as { ok: boolean; result?: number };
+    return r.ok && typeof r.result === 'number' && Number.isFinite(r.result) ? r.result : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 캐럿 줄에서 표를 둘로 나눈다 (캐럿 줄이 아래 표의 첫 줄이 된다). */
+export function splitTableAt(doc: EditableDocument, ctx: CellContext): boolean {
+  if (ctx.row === 0) return false;
+  return (JSON.parse(doc.raw.splitTable(ctx.sec, ctx.para, ctx.ctrl, ctx.row)) as { ok: boolean }).ok;
+}
+
+/** 바로 다음 표를 이 표 아래에 붙인다. */
+export function joinNextTable(doc: EditableDocument, ctx: CellContext): boolean {
+  try {
+    return (JSON.parse(doc.raw.mergeTableWithNext(ctx.sec, ctx.para, ctx.ctrl)) as { ok: boolean }).ok;
+  } catch {
+    return false;
   }
 }

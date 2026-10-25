@@ -1,6 +1,7 @@
 import type { DocumentSession } from '../app/session';
 import { engineVersion } from '../engine/rhwp';
 import { documentText, exportDocument, exportPdf } from '../export/exporters';
+import { printDocument } from '../export/print';
 import { MIME, type DocFormat, baseName } from '../platform/bytes';
 import { isNative, shareFile } from '../platform/files';
 import type { PageView } from '../view/page-view';
@@ -98,6 +99,17 @@ export function openExportSheet(session: DocumentSession): void {
           progress.textContent = `PDF 만드는 중… ${done}/${total}`;
         });
         await deliver(`${baseName(session.name)}.pdf`, pdf, MIME.pdf);
+      } finally {
+        progress.remove();
+      }
+    }),
+    row('print', '인쇄', '프린터로 바로 인쇄하기', async () => {
+      const progress = h('div.progress-toast', {}, '인쇄 준비 중…');
+      document.body.append(progress);
+      try {
+        await printDocument(session.doc.raw, baseName(session.name), (done, total) => {
+          progress.textContent = `인쇄 준비 중… ${done}/${total}`;
+        });
       } finally {
         progress.remove();
       }

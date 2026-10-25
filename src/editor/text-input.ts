@@ -4,7 +4,8 @@ export interface TextInputHandlers {
   actions(actions: InputAction[]): void;
   composing(text: string | null): void;
   key(e: KeyboardEvent): boolean;
-  paste(text: string): void;
+  /** html 이 있으면 서식 있는 붙여넣기 */
+  paste(text: string, html: string | null): void;
 }
 
 /**
@@ -48,9 +49,10 @@ export class TextInput {
       if (this.h.key(e)) e.preventDefault();
     });
     ta.addEventListener('paste', (e) => {
-      const text = e.clipboardData?.getData('text/plain');
+      const text = e.clipboardData?.getData('text/plain') ?? '';
+      const html = e.clipboardData?.getData('text/html') || null;
       e.preventDefault();
-      if (text) this.h.paste(text);
+      if (text || html) this.h.paste(text, html);
     });
     // 선택 위치가 표식 앞으로 가면 Backspace 감지가 깨진다.
     ta.addEventListener('select', () => this.keepCaretAtEnd());

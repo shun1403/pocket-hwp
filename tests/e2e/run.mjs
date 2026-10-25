@@ -679,6 +679,283 @@ await step('읽기 모드에 읽어 주기 버튼이 있다', async () => {
   await page.click('[aria-label="읽기 모드 닫기"]');
 });
 
+/** 쪽 좌표(px) → 화면 좌표 */
+const pageToClient = async (page0, x, y) => {
+  const box = await page.locator('.page').nth(page0).boundingBox();
+  const zoom = await editor((ed) => ed.view.zoom);
+  return { x: box.x + x * zoom, y: box.y + y * zoom };
+};
+const firstTable = () =>
+  editor((ed) => {
+    const t = JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.find((c) => c.type === 'table');
+    return t && { para: t.paraIdx, ctrl: t.controlIdx, rows: t.rowCount };
+  });
+const caretToCell = (cell) =>
+  editor((ed, i) => {
+    const t = JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.find((c) => c.type === 'table');
+    const pos = { sec: 0, para: t.paraIdx, offset: 0, cellPath: [{ controlIndex: t.controlIdx, cellIndex: i, cellParaIndex: 0 }] };
+    ed.select(pos, pos);
+  }, cell);
+
+await step('표 탭: 칸 너비·테두리·계산식·표 나누기', async () => {
+  await newDoc();
+  await page.keyboard.type('표 시험');
+  await page.click('.qb[aria-label="입력 도구"]');
+  await page.click('.tile[aria-label="표"]');
+  await page.click('.sheet .primary-btn:has-text("표 넣기")');
+  await page.waitForTimeout(200);
+  // 3×3 표의 둘째 칸(B열)에 숫자를 넣는다.
+  await editor((ed) => {
+    const t = JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.find((c) => c.type === 'table');
+    const at = (i) => ({ sec: 0, para: t.paraIdx, offset: 0, cellPath: [{ controlIndex: t.controlIdx, cellIndex: i, cellParaIndex: 0 }] });
+    ed.doc.insertText(at(1), '1,200');
+    ed.doc.insertText(at(4), '300');
+    ed.rerender();
+  });
+  await caretToCell(7);
+  await page.click('.qb[aria-label="표 도구"]');
+  await page.click('.tile[aria-label="위 칸 합계"]');
+  const sum = await editor((ed) => ed.doc.paraText(ed.caret));
+  assert.equal(sum, '1500');
+  const widthBefore = await editor((ed) => {
+    const t = JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.find((c) => c.type === 'table');
+    return JSON.parse(ed.doc.raw.getTableCellBboxes(0, t.paraIdx, t.controlIdx))[7].w;
+  });
+  await page.click('.panel-body [aria-label="칸 너비 늘리기"]');
+  const widthAfter = await editor((ed) => {
+    const t = JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.find((c) => c.type === 'table');
+    return JSON.parse(ed.doc.raw.getTableCellBboxes(0, t.paraIdx, t.controlIdx))[7].w;
+  });
+  assert.ok(widthAfter > widthBefore + 5, `${widthBefore} → ${widthAfter}`); // 2mm ≈ 7.6px
+  await page.click('.panel-body .chip-btn:has-text("굵은 실선")');
+  const bottom = await editor((ed) => {
+    const t = JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.find((c) => c.type === 'table');
+    return JSON.parse(ed.doc.raw.getCellProperties(0, t.paraIdx, t.controlIdx, 7)).borderBottom.width;
+  });
+  assert.equal(bottom, 7);
+  await page.click('.tile[aria-label="여기서 표 나누기"]');
+  const rows = await editor((ed) => JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.filter((c) => c.type === 'table').map((c) => c.rowCount));
+  assert.deepEqual(rows, [2, 1]);
+});
+
+await step('머리말을 여러 줄로 고치고, 문서의 머리말을 눌러도 고칠 수 있다', async () => {
+  await openTab('쪽');
+  await page.click('.panel-body .seg:has-text("머리말 고치기")');
+  await page.fill('.sheet.open textarea.text-field', '○○기관\n문서번호 2026-17');
+  await page.click('.sheet.open .chip-btn:has-text("오른쪽")');
+  await page.click('.sheet.open .dialog-form button[type="submit"]');
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+  const lines = await editor((ed) => [0, 1].map((i) => JSON.parse(ed.doc.raw.getHeaderFooterParaInfo(0, true, 0, i)).text));
+  assert.deepEqual(lines, ['○○기관', '문서번호 2026-17']);
+  // 머리말 자리를 찾아 누른다.
+  const spot = await editor((ed) => {
+    for (let y = 0; y < 200; y += 4) if (JSON.parse(ed.doc.raw.hitTestHeaderFooter(0, 400, y)).hit) return { x: 400, y };
+    return null;
+  });
+  assert.ok(spot, '머리말 자리');
+  await page.click('.qb.qb-kb');
+  const at = await pageToClient(0, spot.x, spot.y);
+  await page.touchscreen.tap(at.x, at.y);
+  await page.waitForSelector('.sheet.open textarea.text-field');
+  assert.equal(await page.inputValue('.sheet.open textarea.text-field'), '○○기관\n문서번호 2026-17');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+});
+
+await step('각주를 눌러 내용을 고친다', async () => {
+  await editor((ed) => {
+    const p = { sec: 0, para: 0, offset: 2 };
+    ed.select(p, p);
+  });
+  await openTab('입력');
+  await page.click('.tile[aria-label="각주"]');
+  await submitText('처음 각주');
+  const spot = await editor((ed) => {
+    for (let y = 100; y < 300; y += 2) for (let x = 100; x < 500; x += 3) {
+      const r = JSON.parse(ed.doc.raw.hitTestBodyFootnoteMarker(0, x, y));
+      if (r.hit) return { x: r.bbox.x + r.bbox.w / 2, y: r.bbox.y + r.bbox.h / 2 };
+    }
+    return null;
+  });
+  assert.ok(spot, '각주 번호 자리');
+  await page.click('.qb.qb-kb');
+  const at = await pageToClient(0, spot.x, spot.y);
+  await page.touchscreen.tap(at.x, at.y);
+  await page.waitForSelector('.sheet.open textarea.text-field');
+  assert.equal(await page.inputValue('.sheet.open textarea.text-field'), '처음 각주');
+  await page.fill('.sheet.open textarea.text-field', '고친 각주\n둘째 줄');
+  await page.click('.sheet.open .dialog-form button[type="submit"]');
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+  const texts = await editor((ed) => {
+    const fn = JSON.parse(ed.doc.raw.getPageFootnoteInfo(0, 0));
+    return JSON.parse(ed.doc.raw.getFootnoteInfo(0, fn.paraIdx, fn.controlIdx)).texts.map((t) => t.trimEnd());
+  });
+  assert.deepEqual(texts, ['고친 각주', '둘째 줄']);
+});
+
+await step('도형을 넣고 채우기 색·순서를 바꾼다', async () => {
+  await editor((ed) => {
+    const p = { sec: 0, para: 0, offset: ed.doc.raw.getParagraphLength(0, 0) };
+    ed.select(p, p);
+  });
+  await openTab('입력');
+  await page.click('.tile[aria-label="사각형"]');
+  const shape = await editor((ed) => JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.find((c) => c.type === 'shape'));
+  assert.ok(shape, '도형이 들어가야 함');
+  await page.click('.qb.qb-kb');
+  const at = await pageToClient(0, shape.x + 2, shape.y + shape.h / 2);
+  await page.touchscreen.tap(at.x, at.y);
+  await page.waitForSelector('.selection-menu:not([hidden]) button:has-text("모양")');
+  await page.click('.selection-menu button:has-text("모양")');
+  await page.click('.sheet.open .swatch[aria-label="#fef7e0"]');
+  const fill = await editor((ed, s) => JSON.parse(ed.doc.raw.getShapeProperties(0, s.paraIdx, s.controlIdx)).fillBgColor, shape);
+  assert.equal(fill, 0xe0f7fe);
+});
+
+await step('쪽 테두리·배경, 번호 새로 시작, 새 스타일', async () => {
+  await editor((ed) => {
+    const p = { sec: 0, para: 0, offset: 0 };
+    ed.select(p, p);
+  });
+  await openTab('쪽');
+  await page.click('.panel-body .chip-btn:has-text("굵은 선")');
+  await page.click('.panel-body .swatch[aria-label="#fff8e1"]');
+  const pb = await editor((ed) => JSON.parse(ed.doc.raw.getPageBorderFill(0)));
+  assert.equal(pb.borderLeft.width, 7);
+  assert.equal(pb.fillColor, '#fff8e1');
+  await page.click('.panel-tab:has-text("문단")');
+  await page.click('.panel-body .chip-btn:has-text("1. 가.")').catch(async () => page.click('.panel-body .panel-section:has-text("문단 번호") .chip-btn >> nth=0'));
+  await page.click('.panel-body .seg:has-text("번호 새로 시작")');
+  await submitText('4');
+  assert.match(await editor((ed) => ed.doc.raw.renderPageSvg(0)), />4<\/text>/);
+  await page.click('.panel-tab:has-text("스타일")');
+  await page.click('.panel-body .seg:has-text("새 스타일")');
+  await submitText('보고서 제목');
+  await page.waitForSelector('.panel-body .style-btn:has-text("보고서 제목")');
+  assert.equal(await page.getAttribute('.panel-body .style-btn:has-text("보고서 제목")', 'aria-pressed'), 'true');
+});
+
+await step('서식 있는 붙여넣기', async () => {
+  await page.click('.qb.qb-kb');
+  await editor((ed) => {
+    const p = { sec: 0, para: 0, offset: 0 };
+    ed.select(p, p);
+  });
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.setData('text/plain', '굵은 글 ');
+    dt.setData('text/html', '<b>굵은 글</b> ');
+    document.querySelector('.ime-input').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  });
+  const r = await editor((ed) => ({ text: ed.doc.raw.getTextRange(0, 0, 0, 4), bold: ed.doc.charProps({ sec: 0, para: 0, offset: 1 }).bold }));
+  assert.equal(r.text, '굵은 글');
+  assert.equal(r.bold, true);
+});
+
+await step('링크를 누르면 열기·고치기, 책갈피 목록으로 이동, 목차', async () => {
+  await newDoc();
+  await page.keyboard.type('홈페이지 바로가기');
+  await editor((ed) => ed.select({ sec: 0, para: 0, offset: 0 }, { sec: 0, para: 0, offset: 2 }));
+  await openTab('입력');
+  await page.click('.tile[aria-label="링크"]');
+  await submitText('https://example.com/a');
+  await editor((ed) => ed.select({ sec: 0, para: 0, offset: 1 }, { sec: 0, para: 0, offset: 1 }));
+  await page.click('.tile[aria-label="링크"]');
+  await page.waitForSelector('.sheet.open .link-uri:has-text("https://example.com/a")');
+  await page.click('.sheet.open .sheet-row:has-text("주소 고치기")');
+  await submitText('https://example.com/b');
+  assert.equal(await editor((ed) => ed.linkAtCaret()?.link.uri), 'https://example.com/b');
+  await editor((ed) => ed.select({ sec: 0, para: 0, offset: 5 }, { sec: 0, para: 0, offset: 5 }));
+  await page.click('.tile[aria-label="책갈피"]');
+  await page.click('.sheet.open .sheet-row:has-text("지금 자리에 책갈피 넣기")');
+  await submitText('여기');
+  await page.click('.tile[aria-label="책갈피"]');
+  await page.waitForSelector('.sheet.open .bookmark-row:has-text("여기")');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+  // 목차: 첫 문단을 개요 1로 만들고 목차에서 고른다.
+  await page.click('.panel-tab:has-text("스타일")');
+  await page.click('.panel-body .style-btn:has-text("개요 1")');
+  await page.click('.done-btn');
+  await page.click('[aria-label="더보기"]');
+  await page.click('.sheet.open .sheet-row:has-text("목차")');
+  await page.waitForSelector('.sheet.open .outline-row');
+  await page.click('.sheet.open .outline-row >> nth=0');
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+  // 보기 모드에서 링크를 누르면 링크 시트가 뜬다.
+  const linkAt = await editor((ed) => ed.doc.caretRect({ sec: 0, para: 0, offset: 1 }));
+  const at = await pageToClient(linkAt.pageIndex, linkAt.x + 3, linkAt.y + linkAt.height / 2);
+  await page.touchscreen.tap(at.x, at.y);
+  await page.waitForSelector('.sheet.open .sheet-row:has-text("링크 열기")');
+  assert.equal(await page.$('.sheet.open .sheet-row:has-text("주소 고치기")'), null, '보기 모드에서는 열기만');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+});
+
+await step('인쇄: 쪽 그림을 깔고 인쇄 창을 연다', async () => {
+  if (await page.isVisible('.done-btn')) await page.click('.done-btn');
+  await page.evaluate(() => {
+    window.__printed = -1;
+    window.print = () => {
+      window.__printed = document.querySelectorAll('.print-root img').length;
+    };
+  });
+  await page.click('[aria-label="보내기"]');
+  await page.click('.sheet.open .sheet-row:has-text("인쇄")');
+  await page.waitForFunction(() => window.__printed >= 0);
+  assert.equal(await page.evaluate(() => window.__printed), await editor((ed) => ed.doc.pageCount()));
+});
+
+await step('차트: 값을 표로 보여 주고, 엔진이 못 바꾸면 이유를 알린다', async () => {
+  // 엔진으로 빈 HWPX를 만든 뒤 차트(OOXML)를 끼워 넣은 시험 문서
+  const b64 = await page.evaluate(async () => {
+    const { buildZip, readZip } = await import('/src/export/zip.ts');
+    const raw = window.__pocket.docScreen().session.doc.raw;
+    const Ctor = raw.constructor;
+    const blank = Ctor.createEmpty();
+    blank.createBlankDocument();
+    blank.insertText(0, 0, 0, '차트');
+    const files = await readZip(blank.exportHwpx());
+    blank.free();
+    const enc = new TextEncoder();
+    const dec = new TextDecoder();
+    const chart = '<hp:run charPrIDRef="0"><hp:chart id="1977" zOrder="1" numberingType="PICTURE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" chartIDRef="Chart/chart1.xml"><hp:sz width="30000" widthRelTo="ABSOLUTE" height="20000" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:chart></hp:run>';
+    const xml = '<?xml version="1.0" encoding="UTF-8"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea><c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:f>Sheet1!$B$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>매출</c:v></c:pt></c:strCache></c:strRef></c:tx><c:cat><c:strRef><c:f>Sheet1!$A$2:$A$3</c:f><c:strCache><c:ptCount val="2"/><c:pt idx="0"><c:v>1월</c:v></c:pt><c:pt idx="1"><c:v>2월</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:f>Sheet1!$B$2:$B$3</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>10</c:v></c:pt><c:pt idx="1"><c:v>20</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser><c:axId val="1"/><c:axId val="2"/></c:barChart><c:catAx><c:axId val="1"/><c:crossAx val="2"/></c:catAx><c:valAx><c:axId val="2"/><c:crossAx val="1"/></c:valAx></c:plotArea></c:chart></c:chartSpace>';
+    const out = files.map((f) => {
+      if (f.name === 'Contents/section0.xml') return { name: f.name, bytes: enc.encode(dec.decode(f.bytes).replace('<hp:t>차트</hp:t></hp:run>', `<hp:t>차트</hp:t></hp:run>${chart}`)) };
+      if (f.name === 'Contents/content.hpf') return { name: f.name, bytes: enc.encode(dec.decode(f.bytes).replace('<opf:item id="settings"', '<opf:item id="chart1" href="Chart/chart1.xml" media-type="application/xml"/><opf:item id="settings"')) };
+      return f;
+    });
+    out.push({ name: 'Chart/chart1.xml', bytes: enc.encode(xml) });
+    const zip = buildZip(out);
+    let s = '';
+    for (const b of zip) s += String.fromCharCode(b);
+    return btoa(s);
+  });
+  await goHome();
+  // 앞 단계에서 넣은 가짜 파일 선택 API를 치우고 보통 파일 선택 창을 쓴다.
+  await page.evaluate(() => delete window.showOpenFilePicker);
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('text=문서 열기')]);
+  await chooser.setFiles({ name: '차트.hwpx', mimeType: 'application/hwp+zip', buffer: Buffer.from(b64, 'base64') });
+  await page.waitForSelector('.doc .page canvas');
+  await page.click('[aria-label="편집하기"]');
+  const chart = await editor((ed) => JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.find((c) => c.type === 'ole'));
+  assert.ok(chart, '차트 개체');
+  await page.click('.qb.qb-kb');
+  const at = await pageToClient(0, chart.x + chart.w / 2, chart.y + chart.h / 2);
+  await page.touchscreen.tap(at.x, at.y);
+  await page.click('.selection-menu button:has-text("차트 값 고치기")');
+  await page.waitForSelector('.sheet.open .chart-table');
+  const values = await page.$$eval('.sheet.open .chart-table td input', (els) => els.map((e) => e.value));
+  assert.deepEqual(values, ['10', '20']);
+  await page.fill('.sheet.open .chart-table td input >> nth=0', '15');
+  await page.click('.sheet.open .primary-btn:has-text("저장")');
+  // 시험 문서에는 HWP용 차트 사본이 없어 엔진이 쓰기를 거절한다 → 이유를 알리고 시트는 남는다.
+  await page.waitForSelector('.toast-host:has-text("차트를 바꾸지 못했어요")');
+  assert.ok(await page.$('.sheet.open .chart-table'));
+  await page.goBack();
+});
+
 await step('페이지 오류가 없다', async () => {
   assert.deepEqual(errors, []);
 });

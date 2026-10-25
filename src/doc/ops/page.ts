@@ -61,33 +61,6 @@ export function setColumns(doc: EditableDocument, sec: number, count: number): v
   doc.raw.setColumnDef(sec, count, 0, 1, mm(8));
 }
 
-/** 머리말/꼬리말을 주어진 글 한 줄로 바꾼다. 빈 글이면 지운다. (양쪽 공통) */
-export function setHeaderFooterText(
-  doc: EditableDocument,
-  sec: number,
-  isHeader: boolean,
-  text: string,
-  alignment: 'left' | 'center' | 'right',
-): void {
-  const raw = doc.raw;
-  const exists = (JSON.parse(raw.getHeaderFooter(sec, isHeader, 0)) as { exists?: boolean }).exists;
-  if (exists) raw.deleteHeaderFooter(sec, isHeader, 0);
-  if (!text.trim()) return;
-  raw.createHeaderFooter(sec, isHeader, 0);
-  raw.insertTextInHeaderFooter(sec, isHeader, 0, 0, 0, text);
-  raw.applyParaFormatInHf(sec, isHeader, 0, 0, JSON.stringify({ alignment }));
-}
-
-export function headerFooterText(doc: EditableDocument, sec: number, isHeader: boolean): string {
-  try {
-    const exists = (JSON.parse(doc.raw.getHeaderFooter(sec, isHeader, 0)) as { exists?: boolean }).exists;
-    if (!exists) return '';
-    return (JSON.parse(doc.raw.getHeaderFooterParaInfo(sec, isHeader, 0, 0)) as { text?: string }).text ?? '';
-  } catch {
-    return '';
-  }
-}
-
 /** 꼬리말 쪽 번호 모양 */
 export const PAGE_NUMBER_STYLES = [
   { id: 'plain', label: '1', parts: ['', 'page', ''] },
@@ -122,4 +95,59 @@ export function setPageNumber(doc: EditableDocument, sec: number, style: PageNum
     }
   }
   raw.applyParaFormatInHf(sec, false, 0, 0, JSON.stringify({ alignment }));
+}
+
+/** 쪽 테두리 모양 */
+export const PAGE_BORDERS = [
+  { id: 'none', label: '없음', line: { type: 0, width: 0 } },
+  { id: 'thin', label: '가는 선', line: { type: 1, width: 1 } },
+  { id: 'thick', label: '굵은 선', line: { type: 1, width: 7 } },
+  { id: 'dot', label: '점선', line: { type: 3, width: 1 } },
+] as const;
+
+export type PageBorderStyle = (typeof PAGE_BORDERS)[number]['id'];
+
+interface BorderLine {
+  type: number;
+  width: number;
+  color: string;
+}
+
+interface PageBorderFill {
+  borderLeft: BorderLine;
+  fillType: string;
+  fillColor: string;
+}
+
+export function pageBorderFill(doc: EditableDocument, sec: number): { border: PageBorderStyle | null; fill: string | null } {
+  try {
+    const r = JSON.parse(doc.raw.getPageBorderFill(sec)) as PageBorderFill;
+    const b = PAGE_BORDERS.find((p) => p.line.type === r.borderLeft.type && (p.line.type === 0 || p.line.width === r.borderLeft.width));
+    return { border: b?.id ?? null, fill: r.fillType === 'solid' ? r.fillColor : null };
+  } catch {
+    return { border: null, fill: null };
+  }
+}
+
+/** 엔진은 빠진 항목을 기본값으로 되돌리므로 지금 값에 바꿀 것만 덮어써서 넘긴다. */
+function patchPageBorderFill(doc: EditableDocument, sec: number, patch: Record<string, unknown>): void {
+  let current: Record<string, unknown> = {};
+  try {
+    current = JSON.parse(doc.raw.getPageBorderFill(sec)) as Record<string, unknown>;
+  } catch {
+    // 처음 설정
+  }
+  doc.raw.setPageBorderFill(sec, JSON.stringify({ ...current, ...patch }));
+}
+
+/** 쪽 테두리를 네 변 모두 같은 모양으로 바꾼다. */
+export function setPageBorder(doc: EditableDocument, sec: number, style: PageBorderStyle, color = '#000000'): void {
+  const spec = PAGE_BORDERS.find((p) => p.id === style) ?? PAGE_BORDERS[0];
+  const line = { ...spec.line, color };
+  patchPageBorderFill(doc, sec, { borderLeft: line, borderRight: line, borderTop: line, borderBottom: line });
+}
+
+/** 쪽 배경색. null 이면 없앤다. */
+export function setPageFill(doc: EditableDocument, sec: number, color: string | null): void {
+  patchPageBorderFill(doc, sec, color ? { fillType: 'solid', fillColor: color } : { fillType: 'none' });
 }

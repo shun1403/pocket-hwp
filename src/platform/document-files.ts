@@ -44,6 +44,7 @@ interface NativePick {
 interface DocumentFilesPlugin {
   open(): Promise<NativePick>;
   write(options: { uri: string; data: string }): Promise<{ uri?: string }>;
+  print(options: { name: string; data: string }): Promise<void>;
 }
 
 /** 앱에 들어 있는 네이티브 플러그인 (android/…/DocumentFilesPlugin.java, ios/App/App/DocumentFilesPlugin.swift) */
@@ -106,4 +107,9 @@ export async function writeToSource(source: FileSource, bytes: Uint8Array, webHa
   await writable.write(bytes as BlobPart);
   await writable.close();
   return source;
+}
+
+/** 안드로이드·iOS 인쇄 화면에 PDF(base64)를 넘긴다. */
+export async function printPdf(name: string, base64Pdf: string): Promise<void> {
+  await DocumentFiles.print({ name, data: base64Pdf });
 }
