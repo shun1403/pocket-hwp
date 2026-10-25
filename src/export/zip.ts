@@ -91,13 +91,42 @@ export function buildZip(entries: ZipEntry[], now = new Date()): Uint8Array {
   return out;
 }
 
-async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
+/** 풀어낸 크기가 limit 바이트를 넘으면 멈춘다 (작은 ZIP이 수 GB로 부풀어 앱이 멈추는 것을 막는다). */
+async function inflateRaw(data: Uint8Array, limit: number): Promise<Uint8Array> {
   const stream = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > limit) {
+      await reader.cancel();
+      throw new Error('ZIP 안의 파일이 너무 커요.');
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.length;
+  }
+  return out;
+}
+
+export interface ReadZipOptions {
+  /** 꺼낼 파일만 고른다. 고르지 않은 파일은 풀지 않는다. */
+  accept?: (name: string) => boolean;
+  /** 꺼낸 파일 크기 합계 한도 (기본 1GB) */
+  maxTotalBytes?: number;
 }
 
 /** 가운데 목록(central directory)을 따라 파일을 꺼낸다. */
-export async function readZip(zip: Uint8Array): Promise<ZipEntry[]> {
+export async function readZip(zip: Uint8Array, options: ReadZipOptions = {}): Promise<ZipEntry[]> {
+  const accept = options.accept ?? (() => true);
+  let budget = options.maxTotalBytes ?? 1024 * 1024 * 1024;
   const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
   let eocd = -1;
   for (let i = zip.length - 22; i >= Math.max(0, zip.length - 22 - 0xffff); i -= 1) {
@@ -124,10 +153,14 @@ export async function readZip(zip: Uint8Array): Promise<ZipEntry[]> {
     const localExtraLen = view.getUint16(localOffset + 28, true);
     const start = localOffset + 30 + localNameLen + localExtraLen;
     const data = zip.subarray(start, start + compressed);
-    if (!name.endsWith('/')) {
-      if (method === 0) out.push({ name, bytes: data.slice() });
-      else if (method === 8) out.push({ name, bytes: await inflateRaw(data) });
+    if (!name.endsWith('/') && accept(name)) {
+      let bytes: Uint8Array;
+      if (method === 0) bytes = data.slice();
+      else if (method === 8) bytes = await inflateRaw(data, budget);
       else throw new Error(`지원하지 않는 압축 방식이에요 (${method}).`);
+      budget -= bytes.length;
+      if (budget < 0) throw new Error('ZIP 안의 파일이 너무 커요.');
+      out.push({ name, bytes });
     }
     p += 46 + nameLen + extraLen + commentLen;
   }

@@ -43,7 +43,12 @@ public class MainActivity extends BridgeActivity {
         } else if (Intent.ACTION_SEND.equals(intent.getAction())) {
             source = intent.getParcelableExtra(Intent.EXTRA_STREAM);
         }
-        if (source == null || !ContentResolver.SCHEME_CONTENT.equals(source.getScheme())) return intent;
+        if (source == null) return intent;
+        // 다른 앱이 file:// 주소나 이 앱의 FileProvider 주소를 넘기면 앱 안의 파일을 대신 읽게 될 수 있다.
+        // 그런 주소는 버리고 그냥 앱을 연다. 받는 문서는 content:// 만 쓴다.
+        if (!ContentResolver.SCHEME_CONTENT.equals(source.getScheme()) || isOwnAuthority(source)) {
+            return new Intent(Intent.ACTION_MAIN);
+        }
         try {
             File copy = copyToCache(source);
             Intent view = new Intent(Intent.ACTION_VIEW, Uri.fromFile(copy));
@@ -53,6 +58,12 @@ public class MainActivity extends BridgeActivity {
             Log.w(TAG, "incoming document copy failed", e);
             return intent;
         }
+    }
+
+    private boolean isOwnAuthority(Uri uri) {
+        String authority = uri.getAuthority();
+        String pkg = getPackageName();
+        return authority != null && (authority.equals(pkg) || authority.startsWith(pkg + "."));
     }
 
     private File copyToCache(Uri uri) throws Exception {
@@ -88,7 +99,9 @@ public class MainActivity extends BridgeActivity {
     }
 
     private static String safeName(String name) {
-        String cleaned = name.replaceAll("[\\\\/:*?\"<>|]", "_");
-        return cleaned.isEmpty() ? "받은 문서.hwp" : cleaned;
+        String cleaned = name.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_").trim();
+        if (cleaned.length() > 120) cleaned = cleaned.substring(cleaned.length() - 120);
+        // "."·".." 같은 이름은 폴더를 가리키므로 쓰지 않는다.
+        return cleaned.isEmpty() || cleaned.matches("\\.+") ? "받은 문서.hwp" : cleaned;
     }
 }

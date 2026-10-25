@@ -23,9 +23,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" />
-                <data android:scheme="file" />
                 <data android:mimeType="application/x-hwp" />
                 <data android:mimeType="application/haansofthwp" />
                 <data android:mimeType="application/vnd.hancom.hwp" />
@@ -33,13 +31,12 @@
                 <data android:mimeType="application/vnd.hancom.hwpx" />
                 <data android:mimeType="application/haansofthwpx" />
             </intent-filter>
-            <!-- MIME 형식을 모르는 파일 앱을 위해 확장자로도 받는다 -->
+            <!-- MIME 형식을 모르는 파일 앱을 위해 확장자로도 받는다.
+                 file:// 주소는 받지 않는다 (MainActivity가 앱 안 파일을 읽게 만드는 데 쓰일 수 있다). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" />
-                <data android:scheme="file" />
                 <data android:host="*" />
                 <data android:mimeType="application/octet-stream" />
                 <data android:pathPattern=".*\\.hwp" />
