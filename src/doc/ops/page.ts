@@ -87,3 +87,39 @@ export function headerFooterText(doc: EditableDocument, sec: number, isHeader: b
     return '';
   }
 }
+
+/** 꼬리말 쪽 번호 모양 */
+export const PAGE_NUMBER_STYLES = [
+  { id: 'plain', label: '1', parts: ['', 'page', ''] },
+  { id: 'dash', label: '- 1 -', parts: ['- ', 'page', ' -'] },
+  { id: 'total', label: '1 / 5', parts: ['', 'page', ' / ', 'total', ''] },
+  { id: 'korean', label: '1쪽', parts: ['', 'page', '쪽'] },
+] as const;
+
+export type PageNumberStyle = (typeof PAGE_NUMBER_STYLES)[number]['id'];
+
+/** rhwp 머리말/꼬리말 필드 종류: 1 = 현재 쪽, 2 = 전체 쪽 수 */
+const HF_FIELD = { page: 1, total: 2 } as const;
+
+/**
+ * 꼬리말에 쪽 번호를 넣는다. 꼬리말에 있던 글은 쪽 번호로 바뀐다.
+ * 쪽 번호는 엔진 필드라서 쪽마다 알맞은 번호로 그려지고, HWP/HWPX로 저장해도 남는다.
+ */
+export function setPageNumber(doc: EditableDocument, sec: number, style: PageNumberStyle, alignment: 'left' | 'center' | 'right'): void {
+  const raw = doc.raw;
+  const exists = (JSON.parse(raw.getHeaderFooter(sec, false, 0)) as { exists?: boolean }).exists;
+  if (exists) raw.deleteHeaderFooter(sec, false, 0);
+  raw.createHeaderFooter(sec, false, 0);
+  const spec = PAGE_NUMBER_STYLES.find((s) => s.id === style) ?? PAGE_NUMBER_STYLES[0];
+  let at = 0;
+  for (const part of spec.parts) {
+    if (part === 'page' || part === 'total') {
+      raw.insertFieldInHf(sec, false, 0, 0, at, HF_FIELD[part]);
+      at += 1;
+    } else if (part) {
+      raw.insertTextInHeaderFooter(sec, false, 0, 0, at, part);
+      at += part.length;
+    }
+  }
+  raw.applyParaFormatInHf(sec, false, 0, 0, JSON.stringify({ alignment }));
+}

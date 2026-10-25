@@ -25,7 +25,7 @@ const ALIGN_ICON: Record<string, IconName> = {
 
 /**
  * 키보드(또는 도구 패널) 바로 위의 한 줄. 가장 자주 쓰는 것만 둔다:
- * 서식·입력 패널 열기, 굵게·기울임·밑줄, 글자 크기, 정렬, 글머리표, 키보드 내리기.
+ * 서식·입력·기호 패널 열기, 굵게·기울임·밑줄, 글자 크기, 정렬, 글머리표, 키보드 내리기.
  */
 export class QuickBar {
   readonly el: HTMLElement;
@@ -80,6 +80,7 @@ export class QuickBar {
         {},
         labeled('char', 'format', '서식'),
         labeled('insert', 'plusSquare', '입력'),
+        labeled('symbol', 'symbol', '기호'),
         this.tableBtn,
         h('span.qb-sep'),
         toggle('bold', '굵게', h('b', {}, '가')),
@@ -116,7 +117,7 @@ export class QuickBar {
   /** 패널이 열렸는지·어느 탭인지에 맞춰 버튼 모양을 바꾼다. */
   syncPanel(): void {
     const tab = this.actions.panelTab();
-    for (const [id, b] of Object.entries(this.panelBtns)) b.classList.toggle('on', tab === id || (id === 'char' && !!tab && !['insert', 'table'].includes(tab)));
+    for (const [id, b] of Object.entries(this.panelBtns)) b.classList.toggle('on', tab === id || (id === 'char' && !!tab && !['insert', 'symbol', 'table'].includes(tab)));
     const panelOpen = tab !== null;
     this.kbBtn.setAttribute('aria-label', panelOpen ? '키보드 열기' : '키보드 내리기');
     this.kbBtn.title = this.kbBtn.getAttribute('aria-label')!;

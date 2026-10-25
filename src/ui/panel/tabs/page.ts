@@ -1,4 +1,4 @@
-import { MARGINS, PAPERS, columnCount, getPageDef, headerFooterText, marginOf, paperOf, setColumns, setHeaderFooterText, setPageDef } from '../../../doc/ops/page';
+import { MARGINS, PAGE_NUMBER_STYLES, PAPERS, type PageNumberStyle, columnCount, getPageDef, headerFooterText, marginOf, paperOf, setColumns, setHeaderFooterText, setPageDef, setPageNumber } from '../../../doc/ops/page';
 import { askText } from '../../dialog';
 import { h } from '../../dom';
 import { Bindings, buttonRow, chips, section } from '../controls';
@@ -21,6 +21,9 @@ export const pageTab: TabDef = {
       if (text === null) return;
       ed.command((d) => setHeaderFooterText(d, sec(), isHeader, text, 'center'));
     };
+    let numberAlign: 'left' | 'center' | 'right' = 'center';
+    let numberStyle: PageNumberStyle | null = null;
+    const putNumber = () => numberStyle && ed.command((doc) => setPageNumber(doc, sec(), numberStyle!, numberAlign));
     const el = h(
       'div.tab-body',
       {},
@@ -77,6 +80,35 @@ export const pageTab: TabDef = {
           { label: '꼬리말', content: '꼬리말 쓰기', onClick: () => void editHf(false) },
         ]),
         h('p.panel-note', {}, '비워 두고 넣으면 지워져요.'),
+      ),
+      section(
+        '쪽 번호',
+        chips(
+          b,
+          PAGE_NUMBER_STYLES.map((s) => ({
+            label: `쪽 번호 ${s.label}`,
+            content: s.label,
+            active: () => numberStyle === s.id,
+            onClick: () => {
+              numberStyle = s.id;
+              putNumber();
+            },
+          })),
+        ),
+        buttonRow(
+          b,
+          (['left', 'center', 'right'] as const).map((a) => ({
+            label: { left: '왼쪽', center: '가운데', right: '오른쪽' }[a],
+            icon: ({ left: 'alignLeft', center: 'alignCenter', right: 'alignRight' } as const)[a],
+            active: () => numberAlign === a,
+            onClick: () => {
+              numberAlign = a;
+              putNumber();
+              b.refresh();
+            },
+          })),
+        ),
+        h('p.panel-note', {}, '꼬리말에 넣어요. 꼬리말에 있던 글은 쪽 번호로 바뀌어요. 지우려면 꼬리말을 비워 두고 넣으세요.'),
       ),
     );
     return { el, refresh: () => b.refresh() };

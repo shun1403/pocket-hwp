@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@capacitor-community/text-to-speech':
+        specifier: 8.0.2
+        version: 8.0.2(@capacitor/core@8.5.3)
       '@capacitor/app':
         specifier: ^8.1.2
         version: 8.1.2(@capacitor/core@8.5.3)
@@ -59,6 +62,11 @@ importers:
         version: 5.0.5(@types/node@26.6.5)(vite@8.3.5(@types/node@26.6.5))
 
 packages:
+
+  '@capacitor-community/text-to-speech@8.0.2':
+    resolution: {integrity: sha512-SbpBMzcmzdTiN8jQDme/yUYHEJISZA+IiaRn5zT14k3UKpjaA7eYBnSm9h76rJHRV/y6DVZVhT1J0SaK5JTKtA==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@capacitor/android@8.5.3':
     resolution: {integrity: sha512-ilH4gSSz3DrketMkzDVAvY9JsWJ//rCQnECLTdcFRO7xXDogwAbUvQAnIAbiqefwV/D1xfjEL4Gw1MJXEcaA9g==}
@@ -874,6 +882,10 @@ packages:
     resolution: {integrity: sha512-p4a9I6X6nu6IhoGmBqAcbJy1mlC4j27vEPZX9F4L4/vZT3Lyq1VkFHw/V/PUcB9Buo+DG3iHkT0x3Qya58zc3g==}
 
 snapshots:
+
+  '@capacitor-community/text-to-speech@8.0.2(@capacitor/core@8.5.3)':
+    dependencies:
+      '@capacitor/core': 8.5.3
 
   '@capacitor/android@8.5.3(@capacitor/core@8.5.3)':
     dependencies:

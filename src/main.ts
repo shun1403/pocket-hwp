@@ -3,6 +3,7 @@ import { onBack } from './app/back';
 import { DocumentSession } from './app/session';
 import { engineVersion, initEngine } from './engine/rhwp';
 import { MIME } from './platform/bytes';
+import { canOpenInPlace, pickDocumentInPlace } from './platform/document-files';
 import { isNative, listenIncomingFiles, pickFile, shareFile } from './platform/files';
 import { library } from './platform/library';
 import { requestPersistence } from './platform/storage';
@@ -53,13 +54,29 @@ if (import.meta.env.DEV) {
 }
 
 async function chooseFile(): Promise<void> {
+  // 앱·크롬 계열 컴퓨터 브라우저에서는 원래 파일에 다시 저장할 수 있게 연다.
+  if (canOpenInPlace()) {
+    let picked: Awaited<ReturnType<typeof pickDocumentInPlace>> = null;
+    try {
+      picked = await pickDocumentInPlace();
+    } catch (err) {
+      console.error(err);
+      toast('파일을 열지 못했어요.');
+      return;
+    }
+    if (picked) {
+      const { name, bytes, source, handle } = picked;
+      await withLoading((pw) => DocumentSession.open(name, bytes, { password: pw, source, handle }));
+    }
+    return;
+  }
   const file = await pickFile('.hwp,.hwpx,application/x-hwp,application/haansofthwp,application/vnd.hancom.hwp,application/hwp+zip,application/vnd.hancom.hwpx');
   if (file) await openBytes(file.name, file.arrayBuffer());
 }
 
 async function openBytes(name: string, data: Promise<ArrayBuffer | Uint8Array>): Promise<void> {
   const bytes = new Uint8Array(await data);
-  await withLoading((pw) => DocumentSession.open(name, bytes, undefined, pw));
+  await withLoading((pw) => DocumentSession.open(name, bytes, { password: pw }));
 }
 
 const isPasswordError = (err: unknown) => /암호|비밀번호|password|encrypt/i.test(String(err));
@@ -108,7 +125,10 @@ async function withLoading(open: (password?: string) => Promise<DocumentSession 
 }
 
 function showDoc(session: DocumentSession, startEditing: boolean): void {
-  const screen = new DocScreen(session, () => void closeDoc());
+  const screen = new DocScreen(session, () => void closeDoc(), {
+    reopen: (id) => void withLoading((pw) => DocumentSession.openEntry(id, pw)),
+    openCopy: (name, bytes) => void withLoading((pw) => DocumentSession.open(name, bytes, { password: pw })),
+  });
   docScreen = screen;
   home.el.hidden = true;
   app.append(screen.el);

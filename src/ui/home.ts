@@ -1,9 +1,14 @@
-import { type LibrarySummary, library, needsBackup } from '../platform/library';
+import { baseName } from '../platform/bytes';
+import { type LibrarySummary, library, needsBackup, newId } from '../platform/library';
+import { readPref, writePref } from '../platform/prefs';
 import { isIosBrowserTab } from '../platform/storage';
-import { askConfirm } from './dialog';
+import { versions } from '../platform/versions';
+import { fileHandles } from '../platform/document-files';
+import { askConfirm, askText } from './dialog';
 import { h } from './dom';
 import { icon } from './icons';
 import { Sheet } from './sheet';
+import { toast } from './toast';
 import { backupAll, homeScreenHelp, openStorageSheet } from './storage-sheet';
 
 export interface HomeActions {
@@ -37,6 +42,13 @@ export class HomeScreen {
   readonly el: HTMLElement;
   private readonly list: HTMLElement;
   private readonly notices = h('div.notices');
+  private readonly searchBox = h('input.home-search', {
+    type: 'search',
+    placeholder: '문서 이름으로 찾기',
+    'aria-label': '최근 문서 찾기',
+    enterkeyhint: 'search',
+  }) as HTMLInputElement;
+  private items: LibrarySummary[] = [];
 
   constructor(private readonly actions: HomeActions) {
     this.list = h('div.recent-list', { role: 'list' });
@@ -74,8 +86,11 @@ export class HomeScreen {
       ),
       this.notices,
       h('h2.section-title', {}, '최근 문서'),
+      this.searchBox,
       this.list,
     );
+    this.searchBox.hidden = true;
+    this.searchBox.addEventListener('input', () => this.renderList());
     this.attachDrop();
   }
 
@@ -86,7 +101,16 @@ export class HomeScreen {
     } catch {
       // 사생활 보호 모드 등에서 IndexedDB가 막혀 있으면 빈 목록으로 둔다.
     }
+    this.items = items;
     this.renderNotices(items);
+    // 문서가 몇 개 안 되면 찾기 칸은 자리만 차지한다.
+    this.searchBox.hidden = items.length < 5;
+    if (this.searchBox.hidden) this.searchBox.value = '';
+    this.renderList();
+  }
+
+  private renderList(): void {
+    const items = this.items;
     this.list.replaceChildren();
     if (items.length === 0) {
       this.list.append(
@@ -101,7 +125,10 @@ export class HomeScreen {
       );
       return;
     }
-    for (const item of items) this.list.append(this.card(item));
+    const query = this.searchBox.value.trim().toLowerCase();
+    const shown = query ? items.filter((i) => i.name.toLowerCase().includes(query)) : items;
+    if (shown.length === 0) this.list.append(h('p.empty-search', {}, `“${this.searchBox.value.trim()}”이(가) 들어간 문서가 없어요.`));
+    for (const item of shown) this.list.append(this.card(item));
   }
 
   /** 데이터가 사라질 수 있는 상황을 알려 주는 안내 카드 */
@@ -157,7 +184,7 @@ export class HomeScreen {
         h(
           'span.recent-text',
           {},
-          h('span.recent-name', {}, item.name),
+          h('span.recent-name', {}, item.pinned ? h('span.pin-mark', { 'aria-label': '고정됨', title: '고정됨' }, icon('pin', 14)) : null, item.name),
           h(
             'span.recent-meta',
             {},
@@ -177,18 +204,28 @@ export class HomeScreen {
       h('button.sheet-row', { onclick: () => (sheet.close(), this.actions.openEntry(item.id)) }, icon('book'), '열기'),
       h('button.sheet-row', { onclick: () => (sheet.close(), this.actions.shareEntry(item.id)) }, icon('share'), '보내기'),
       h(
+        'button.sheet-row',
+        { onclick: () => (sheet.close(), void this.setPinned(item.id, !item.pinned)) },
+        icon('pin'),
+        item.pinned ? '고정 풀기' : '맨 위에 고정',
+      ),
+      h('button.sheet-row', { onclick: () => (sheet.close(), void this.duplicate(item.id)) }, icon('filePlus'), '사본 만들기 (양식 다시 쓰기)'),
+      h('button.sheet-row', { onclick: () => (sheet.close(), void this.rename(item)) }, icon('edit'), '이름 바꾸기'),
+      h(
         'button.sheet-row.danger',
         {
           onclick: async () => {
             sheet.close();
             const ok = await askConfirm({
               title: '보관함에서 삭제',
-              message: `“${item.name}”을(를) 최근 목록과 앱 보관함에서 지울까요? 다른 앱에 있는 원본 파일은 지워지지 않아요.`,
+              message: `“${item.name}”을(를) 최근 목록과 앱 보관함에서 지울까요? 버전 기록도 함께 지워져요. 다른 앱에 있는 원본 파일은 지워지지 않아요.`,
               confirmLabel: '삭제',
               danger: true,
             });
             if (!ok) return;
             await library.remove(item.id);
+            await versions.removeAll(item.id).catch(() => undefined);
+            await fileHandles.remove(item.id).catch(() => undefined);
             void this.refresh();
           },
         },
@@ -197,6 +234,37 @@ export class HomeScreen {
       ),
     );
     sheet.open();
+  }
+
+  private async setPinned(id: string, pinned: boolean): Promise<void> {
+    const entry = await library.get(id);
+    if (!entry) return;
+    await library.put({ ...entry, pinned });
+    await this.refresh();
+  }
+
+  /** 같은 내용의 새 문서를 만든다. 원본은 그대로 두고 사본에 쓸 수 있다. */
+  private async duplicate(id: string): Promise<void> {
+    const entry = await library.get(id);
+    if (!entry) return;
+    const now = Date.now();
+    const base = baseName(entry.name);
+    const taken = new Set(this.items.map((i) => i.name));
+    let name = `${base} (사본).${entry.format}`;
+    for (let n = 2; taken.has(name); n += 1) name = `${base} (사본 ${n}).${entry.format}`;
+    // 사본은 원래 파일과 이어지지 않는다 (사본을 고쳐도 원본 파일을 덮어쓰지 않게).
+    await library.put({ ...entry, id: newId(), name, openedAt: now, updatedAt: now, pinned: false, exportedAt: undefined, source: undefined });
+    await this.refresh();
+    toast(`“${name}”을(를) 만들었어요.`);
+  }
+
+  private async rename(item: LibrarySummary): Promise<void> {
+    const next = await askText('문서 이름', baseName(item.name), '바꾸기');
+    if (!next?.trim()) return;
+    const entry = await library.get(item.id);
+    if (!entry) return;
+    await library.put({ ...entry, name: `${baseName(next.trim())}.${entry.format}` });
+    await this.refresh();
   }
 
   /** 데스크톱·태블릿 브라우저에서 파일을 끌어 놓아 열기 */
@@ -218,17 +286,11 @@ export class HomeScreen {
 }
 
 function dismissed(key: string): boolean {
-  try {
-    return localStorage.getItem(`dismissed:${key}`) === '1';
-  } catch {
-    return false;
-  }
+  // 예전 버전은 '1'을 저장했다 (JSON으로 읽으면 1).
+  const v = readPref<unknown>(`dismissed:${key}`, false);
+  return v === true || v === 1;
 }
 
 function dismiss(key: string): void {
-  try {
-    localStorage.setItem(`dismissed:${key}`, '1');
-  } catch {
-    // 저장소를 못 쓰면 다음에 다시 보여 준다.
-  }
+  writePref(`dismissed:${key}`, true);
 }

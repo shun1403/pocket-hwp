@@ -26,6 +26,8 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // 앱 안에 들어 있는 플러그인: 원래 파일 자리에 다시 저장하기
+        registerPlugin(DocumentFilesPlugin.class);
         setIntent(normalize(getIntent()));
         super.onCreate(savedInstanceState);
     }

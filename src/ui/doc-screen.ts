@@ -4,7 +4,11 @@ import { Editor, type EditorState } from '../editor/editor';
 import { copyText, readText } from '../platform/clipboard';
 import { isNative } from '../platform/files';
 import { askText } from './dialog';
-import { openExportSheet, openInfoSheet, openPagesSheet } from './doc-sheets';
+import { openExportSheet, openInfoSheet, openPagesSheet, saveToOriginal } from './doc-sheets';
+import { fieldCount } from '../doc/ops/fields';
+import { FormFill } from './form-fill';
+import { type VersionActions, openVersionsSheet } from './versions-sheet';
+import { maybeShowEditTips, openTips } from './tips';
 import { h, keepFocus } from './dom';
 import { icon } from './icons';
 import { type PageObject, deleteObject, equationScript, isImageInline, scaleObject, setEquationScript, setImageInline } from '../doc/ops/objects';
@@ -34,6 +38,8 @@ export class DocScreen {
   private readonly viewBar: HTMLElement;
   private readonly menu = h('div.selection-menu', { role: 'menu' });
   private readonly search: SearchBar;
+  private readonly formFill: FormFill;
+  private readonly fillChip = h('button.fill-chip', { type: 'button' });
   private pillTimer = 0;
   private editBack: { dismiss: () => void } | null = null;
   private searchBack: { dismiss: () => void } | null = null;
@@ -43,6 +49,7 @@ export class DocScreen {
   constructor(
     private readonly session: DocumentSession,
     private readonly onExit: () => void,
+    private readonly versionActions: VersionActions,
   ) {
     const body = h('div.doc-body');
     this.editor = new Editor(body, {
@@ -56,7 +63,8 @@ export class DocScreen {
       objectSelected: (obj, anchor) => this.showObjectMenu(obj, anchor),
       shortcut: (k) => {
         if (k === 's') {
-          void session.save().then(() => toast('보관함에 저장했어요.'));
+          if (session.sourceName) void saveToOriginal(session);
+          else void session.save().then(() => toast('보관함에 저장했어요.'));
           return true;
         }
         if (k === 'f') {
@@ -75,6 +83,8 @@ export class DocScreen {
       openReader: () => this.openReader(),
       openPages: () => openPagesSheet(this.session, this.editor.view),
       openInfo: () => openInfoSheet(this.session),
+      openTab: (id) => this.panel.open(id),
+      openFormFill: () => this.openFormFill(),
     });
     this.panel.onToggle = (open) => {
       this.el.classList.toggle('panel-open', open);
@@ -93,14 +103,24 @@ export class DocScreen {
       },
       panelTab: () => this.panel.activeTab,
     });
-    // 글을 쓰려고 입력칸에 포커스가 가면(문서를 탭하면) 도구 패널을 닫는다.
+    this.formFill = new FormFill(this.editor);
+    this.formFill.onToggle = (open) => {
+      this.el.classList.toggle('filling', open);
+      this.fillChip.hidden = true;
+      if (!open) requestAnimationFrame(() => this.editor.revealCaret());
+    };
+    this.formFill.el.addEventListener('focusin', () => this.watchKeyboard());
+    this.fillChip.addEventListener('click', () => this.openFormFill());
+    this.fillChip.hidden = true;
+    // 글을 쓰려고 입력칸에 포커스가 가면(문서를 탭하면) 도구 패널과 서식 채우기를 닫는다.
     this.editor.input.el.addEventListener('focus', () => {
       this.panel.close();
+      this.formFill.close();
       this.watchKeyboard();
     });
     this.editor.input.el.addEventListener('blur', () => {
       window.clearTimeout(this.dockTimer);
-      this.setDockTop(false);
+      if (!this.formFill.isOpen) this.setDockTop(false);
     });
     this.search = new SearchBar(this.editor, () => this.closeSearch());
     this.appBar = h('header.app-bar.doc-bar');
@@ -122,9 +142,10 @@ export class DocScreen {
       this.search.el,
       body,
       this.pill,
+      this.fillChip,
       this.viewBar,
       this.menu,
-      h('div.edit-dock', {}, this.quickBar.el, this.panel.el),
+      h('div.edit-dock', {}, this.formFill.el, this.quickBar.el, this.panel.el),
     );
     this.search.el.hidden = true;
     this.menu.hidden = true;
@@ -141,6 +162,19 @@ export class DocScreen {
     this.editor.load(this.session.doc);
     this.title.textContent = this.session.name;
     this.setStatus(this.session.edited ? '앱 보관함에 저장됨' : `${this.session.doc.pageCount()}쪽`);
+    // 누름틀이 있는 양식이면 바로 채울 수 있게 권한다.
+    const fields = fieldCount(this.session.doc);
+    if (fields > 0) {
+      this.fillChip.replaceChildren(icon('form', 20), `빈칸 ${fields}개 채우기`);
+      this.fillChip.hidden = false;
+    }
+  }
+
+  /** 서식 채우기를 연다 (편집 모드로 바뀐다). */
+  openFormFill(): void {
+    if (this.editor.currentMode !== 'edit') this.setEditing(true, false);
+    this.panel.close();
+    this.formFill.open();
   }
 
   private setStatus(text: string): void {
@@ -165,7 +199,9 @@ export class DocScreen {
         titleBox,
         btn('undo', '실행 취소', () => this.editor.undo(), !this.state?.canUndo),
         btn('redo', '다시 실행', () => this.editor.redo(), !this.state?.canRedo),
-        btn('search', '찾기·바꾸기', () => this.openSearch()),
+        this.session.sourceName
+          ? btn('save', `원래 파일(${this.session.sourceName})에 저장`, () => void saveToOriginal(this.session))
+          : btn('search', '찾기·바꾸기', () => this.openSearch()),
       );
     } else {
       this.appBar.replaceChildren(btn('back', '문서 닫기', () => this.onExit()), titleBox, btn('more', '더보기', () => this.more()));
@@ -177,11 +213,14 @@ export class DocScreen {
     const row = (name: Parameters<typeof icon>[0], label: string, run: () => void) =>
       h('button.sheet-row', { onclick: () => (sheet.close(), run()) }, icon(name), label);
     sheet.body.append(
+      row('form', '서식 채우기 (빈칸 차례로 채우기)', () => this.openFormFill()),
       row('pages', '쪽 모아 보기', () => openPagesSheet(this.session, this.editor.view)),
       row('zoomFit', '쪽 전체 보기', () => this.editor.view.setZoomFactor(1)),
       row('text', '본문 폭에 맞추기 (글자 크게)', () => this.editor.view.fitBody(window.innerHeight / 2)),
       row('edit', '이름 바꾸기', () => void this.rename()),
+      row('clock', '버전 기록 (예전 내용으로 되돌리기)', () => void openVersionsSheet(this.session, this.versionActions)),
       row('info', '문서 정보', () => openInfoSheet(this.session)),
+      row('sparkles', '사용법', () => openTips()),
     );
     sheet.open();
   }
@@ -195,7 +234,7 @@ export class DocScreen {
 
   // ───────────── 모드 ─────────────
 
-  setEditing(on: boolean): void {
+  setEditing(on: boolean, showTips = true): void {
     if (on === (this.editor.currentMode === 'edit')) return;
     this.el.classList.toggle('editing', on);
     this.el.classList.remove('immersive');
@@ -207,8 +246,11 @@ export class DocScreen {
         this.editBack = null;
         this.setEditing(false);
       });
+      // 처음 편집할 때 한 번 사용법을 보여 준다 (키보드는 안내를 닫은 뒤 문서를 누르면 올라온다).
+      if (showTips && maybeShowEditTips()) this.editor.input.blur();
     } else {
       this.panel.close();
+      this.formFill.close();
       this.editBack?.dismiss();
       this.editBack = null;
       void this.session.save();
@@ -226,7 +268,7 @@ export class DocScreen {
     if (keyboardUnmeasurable) this.setDockTop(true);
     // 키보드가 다 올라온 뒤 화면이 줄었는지 본다.
     this.dockTimer = window.setTimeout(() => {
-      if (!this.editor.input.focused) return;
+      if (!this.editor.input.focused && !this.formFill.el.contains(document.activeElement)) return;
       keyboardUnmeasurable = !document.documentElement.classList.contains('kb-open');
       this.setDockTop(keyboardUnmeasurable);
     }, 500);

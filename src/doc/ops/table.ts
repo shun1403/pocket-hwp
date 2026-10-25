@@ -111,3 +111,88 @@ export function setCellFill(doc: EditableDocument, ctx: CellContext, color: stri
   const props = color ? { fillType: 'solid', fillColor: color } : { fillType: 'none' };
   doc.raw.setCellProperties(ctx.sec, ctx.para, ctx.ctrl, ctx.cell, JSON.stringify(props));
 }
+
+/** 표 칸 하나의 자리와 쪽 위 상자 (getTableCellBboxes) */
+export interface CellBox {
+  cellIdx: number;
+  row: number;
+  col: number;
+  rowSpan: number;
+  colSpan: number;
+  pageIndex: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export function tableCells(doc: EditableDocument, ctx: CellContext): CellBox[] {
+  try {
+    return JSON.parse(doc.raw.getTableCellBboxes(ctx.sec, ctx.para, ctx.ctrl)) as CellBox[];
+  } catch {
+    return [];
+  }
+}
+
+/** 표의 줄·칸 수 */
+export function tableSize(cells: CellBox[]): { rows: number; cols: number } {
+  let rows = 0;
+  let cols = 0;
+  for (const c of cells) {
+    rows = Math.max(rows, c.row + c.rowSpan);
+    cols = Math.max(cols, c.col + c.colSpan);
+  }
+  return { rows, cols };
+}
+
+/** 캐럿 칸에서 아래로 rows줄, 오른쪽으로 cols칸 범위 (합쳐진 칸이 걸치면 범위를 넓힌다) */
+export interface CellRange {
+  r0: number;
+  c0: number;
+  r1: number;
+  c1: number;
+}
+
+export function cellRange(ctx: CellContext, cells: CellBox[], rows: number, cols: number): CellRange {
+  const range = { r0: ctx.row, c0: ctx.col, r1: ctx.row + Math.max(rows, ctx.rowSpan) - 1, c1: ctx.col + Math.max(cols, ctx.colSpan) - 1 };
+  // 걸친 합쳐진 칸을 모두 품을 때까지 넓힌다.
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const c of cellsIn(cells, range)) {
+      const r1 = c.row + c.rowSpan - 1;
+      const c1 = c.col + c.colSpan - 1;
+      if (c.row < range.r0 || c.col < range.c0 || r1 > range.r1 || c1 > range.c1) {
+        range.r0 = Math.min(range.r0, c.row);
+        range.c0 = Math.min(range.c0, c.col);
+        range.r1 = Math.max(range.r1, r1);
+        range.c1 = Math.max(range.c1, c1);
+        changed = true;
+      }
+    }
+  }
+  return range;
+}
+
+export function cellsIn(cells: CellBox[], r: CellRange): CellBox[] {
+  return cells.filter((c) => c.row <= r.r1 && c.row + c.rowSpan - 1 >= r.r0 && c.col <= r.c1 && c.col + c.colSpan - 1 >= r.c0);
+}
+
+export function mergeRange(doc: EditableDocument, ctx: CellContext, r: CellRange): DocPos {
+  doc.raw.mergeTableCells(ctx.sec, ctx.para, ctx.ctrl, r.r0, r.c0, r.r1, r.c1);
+  return cellPos(ctx, findCell(doc, ctx, r.r0, r.c0));
+}
+
+export function fillRange(doc: EditableDocument, ctx: CellContext, cells: CellBox[], color: string | null): void {
+  for (const c of cells) setCellFill(doc, { ...ctx, cell: c.cellIdx }, color);
+}
+
+/** 고른 칸들의 글을 모두 지운다 (칸은 남긴다). */
+export function clearRange(doc: EditableDocument, ctx: CellContext, cells: CellBox[]): void {
+  for (const c of cells) {
+    const first = cellPos(ctx, c.cellIdx);
+    const lastPara = doc.paraCount(first) - 1;
+    const last: DocPos = { ...first, cellPath: [{ controlIndex: ctx.ctrl, cellIndex: c.cellIdx, cellParaIndex: lastPara }] };
+    const end = { ...last, offset: doc.paraLength(last) };
+    if (lastPara > 0 || end.offset > 0) doc.deleteRange(first, end);
+  }
+}

@@ -17,6 +17,7 @@ export class Overlay {
   };
   private readonly objectBox = document.createElement('div');
   private selection: HTMLDivElement[] = [];
+  private highlight: { rects: PageRect[]; els: HTMLDivElement[] } = { rects: [], els: [] };
 
   constructor(private readonly view: PageView) {
     this.caret.className = 'caret';
@@ -82,6 +83,23 @@ export class Overlay {
     this.selection = [];
     this.handles.start.remove();
     this.handles.end.remove();
+  }
+
+  /** 표에서 고른 칸 범위처럼 캐럿·선택과 따로 보여 줄 영역. 빈 배열이면 지운다. */
+  setHighlight(rects: PageRect[]): void {
+    this.highlight.rects = rects;
+    this.drawHighlight();
+  }
+
+  /** 확대·다시 그리기 뒤 위치를 다시 맞춘다. */
+  drawHighlight(): void {
+    this.highlight.els.forEach((el) => el.remove());
+    this.highlight.els = [];
+    for (const r of this.highlight.rects) {
+      const el = document.createElement('div');
+      el.className = 'range-rect';
+      if (this.place(el, r.pageIndex, r.x, r.y, r.width, r.height)) this.highlight.els.push(el);
+    }
   }
 
   /** 선택한 개체(그림·수식·글상자) 테두리 */

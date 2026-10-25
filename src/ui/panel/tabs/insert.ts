@@ -6,10 +6,10 @@ import { h } from '../../dom';
 import { Bindings, section, tiles } from '../controls';
 import type { PanelContext, TabDef } from '../context';
 import { openEquationSheet } from '../equation-sheet';
+import { openSignatureSheet } from '../signature-sheet';
 import { openTableSheet } from '../table-sheet';
 import { toast } from '../../toast';
 
-const SYMBOLS = ['※', '·', '•', '○', '●', '□', '■', '◇', '◆', '△', '▲', '▷', '▶', '☆', '★', '→', '←', '↑', '↓', '↔', '①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '「', '」', '『', '』', '〈', '〉', '《', '》', '…', '‥', '℃', '㎡', '㎏', '㎞', '₩', '%', '±', '×', '÷', '≠', '≤', '≥', '∞', '√', '§', '¶', '™', '©', '✓', '✔'];
 
 function bodyOnly(ctx: PanelContext, what: string): boolean {
   const caret = ctx.editor.caretPos;
@@ -101,8 +101,12 @@ export const insertTab: TabDef = {
         ]),
       ),
       section(
-        '기호',
-        h('div.symbols', {}, ...SYMBOLS.map((s) => b.button('symbol', { label: `기호 ${s}`, content: s, onClick: () => ed.insertText(s) }))),
+        '양식',
+        tiles(b, [
+          { label: '서식 채우기', icon: 'form', onClick: () => ctx.openFormFill() },
+          { label: '서명·도장', icon: 'pen', onClick: () => void openSignatureSheet(ed) },
+          { label: '기호·상용구', icon: 'symbol', onClick: () => ctx.openTab('symbol') },
+        ]),
       ),
     );
     return { el, refresh: () => b.refresh() };
