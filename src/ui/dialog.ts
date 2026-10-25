@@ -35,11 +35,17 @@ export function askConfirm(opts: ConfirmOptions): Promise<boolean> {
   });
 }
 
-/** 한 줄 입력 시트. 브라우저 prompt() 대신 쓴다. 취소하면 null. */
-export function askText(title: string, initial: string, confirmLabel = '확인'): Promise<string | null> {
+/** 한 줄 입력 시트. 브라우저 prompt() 대신 쓴다. 취소하면 null. secret 이면 암호 입력칸. */
+export function askText(title: string, initial: string, confirmLabel = '확인', opts: { secret?: boolean; message?: string } = {}): Promise<string | null> {
   return new Promise((resolve) => {
     let answered = false;
-    const input = h('input.text-field', { type: 'text', value: initial, enterkeyhint: 'done', 'aria-label': title });
+    const input = h('input.text-field', {
+      type: opts.secret ? 'password' : 'text',
+      value: initial,
+      enterkeyhint: 'done',
+      autocomplete: opts.secret ? 'off' : null,
+      'aria-label': title,
+    });
     const finish = (value: string | null) => {
       if (answered) return;
       answered = true;
@@ -50,6 +56,7 @@ export function askText(title: string, initial: string, confirmLabel = '확인')
     const form = h(
       'form.dialog-form',
       {},
+      opts.message ? h('p.dialog-message', {}, opts.message) : null,
       input,
       h(
         'div.dialog-actions',

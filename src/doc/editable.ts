@@ -15,19 +15,34 @@ import {
 /** 글자 모양 (rhwp CharProperties 중 모바일 UI가 다루는 부분) */
 export interface CharProps {
   fontFamily?: string;
+  /** 글꼴을 바꿀 때: findOrCreateFontId 결과 */
+  fontId?: number;
   fontSize?: number; // HWPUNIT, 1pt = 100
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
   strikethrough?: boolean;
+  superscript?: boolean;
+  subscript?: boolean;
   textColor?: string;
   shadeColor?: string;
+  /** 언어별(7개) 장평 %, 자간 % */
+  ratios?: number[];
+  spacings?: number[];
 }
 
 export interface ParaProps {
   alignment?: 'justify' | 'left' | 'right' | 'center' | 'distribute' | 'split';
   lineSpacing?: number;
   lineSpacingType?: string;
+  /** px (96dpi) */
+  marginLeft?: number;
+  indent?: number;
+  spacingBefore?: number;
+  spacingAfter?: number;
+  headType?: 'None' | 'Outline' | 'Number' | 'Bullet';
+  numberingId?: number;
+  paraLevel?: number;
 }
 
 export interface SearchMatch {
@@ -277,24 +292,5 @@ export class EditableDocument {
     return { sec: pos.sec, para: Math.min(r.paraIdx + 1, this.raw.getParagraphCount(pos.sec) - 1), offset: 0 };
   }
 
-  insertPicture(pos: DocPos, image: Uint8Array, naturalW: number, naturalH: number, ext: string, maxWidthPx: number): void {
-    // HWPUNIT: 1인치 = 7200, 96dpi 기준 1px = 75 HWPUNIT
-    const scale = Math.min(1, maxWidthPx / naturalW);
-    const width = Math.round(naturalW * scale * 75);
-    const height = Math.round(naturalH * scale * 75);
-    this.raw.insertPictureEx(
-      JSON.stringify({
-        sectionIdx: pos.sec,
-        paraIdx: pos.para,
-        charOffset: pos.offset,
-        cellPath: inCell(pos) ? cellPathJson(pos) : '',
-        width,
-        height,
-        naturalWidthPx: naturalW,
-        naturalHeightPx: naturalH,
-        extension: ext,
-      }),
-      image,
-    );
-  }
+
 }

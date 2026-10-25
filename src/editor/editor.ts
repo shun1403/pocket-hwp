@@ -11,6 +11,7 @@ import {
   withInnerPara,
   wordBounds,
 } from '../doc/position';
+import { type PageObject, objectAt } from '../doc/ops/objects';
 import { haptic } from '../platform/files';
 import { attachGestures } from '../view/gestures';
 import { PageView } from '../view/page-view';
@@ -38,10 +39,10 @@ export interface EditorHost {
   toggleChrome(): void;
   /** 선택 범위 메뉴를 띄울 화면 좌표 (null이면 숨김) */
   selectionMenu(anchor: { x: number; top: number; bottom: number } | null): void;
-  /** 키보드·툴바에 가려지는 화면 아래쪽 높이 */
-  bottomInset(): number;
   /** 단축키 중 앱이 처리할 것 (저장 등) */
   shortcut(key: string): boolean;
+  /** 개체를 골랐다 (메뉴를 띄울 화면 좌표). null이면 선택 해제 */
+  objectSelected(obj: PageObject | null, anchor: { x: number; top: number; bottom: number } | null): void;
 }
 
 type Move = 'left' | 'right' | 'up' | 'down' | 'home' | 'end';
@@ -64,6 +65,10 @@ export class Editor {
   private viewTapTimer = 0;
   private dragging: HandleSide | null = null;
   private readonly disposer = new AbortController();
+  /** 도구 패널이 키보드 자리를 쓰는 동안: 선택해도 키보드를 올리지 않는다 */
+  keyboardSuppressed = false;
+  private caretHandle = false;
+  private object: PageObject | null = null;
 
   constructor(
     host: HTMLElement,
@@ -135,11 +140,47 @@ export class Editor {
       this.viewTapTimer = window.setTimeout(() => this.hostApi.toggleChrome(), 260);
       return;
     }
+    if (this.selectObjectAt(x, y)) return;
     const pos = this.hit(x, y);
     if (!pos) return;
     this.input.commitComposition();
+    this.caretHandle = true;
     this.setCaret(pos, null);
     this.input.focus();
+  }
+
+  /** 탭한 자리에 그림·수식·글상자가 있으면 고른다. */
+  private selectObjectAt(clientX: number, clientY: number): boolean {
+    const p = this.view.clientToPage(clientX, clientY);
+    const obj = p && this.doc ? objectAt(this.doc, p.page, p.x, p.y) : null;
+    if (!obj) {
+      this.clearObject();
+      return false;
+    }
+    this.input.commitComposition();
+    this.input.blur();
+    this.anchor = null;
+    this.object = obj;
+    this.paint(false);
+    return true;
+  }
+
+  get selectedObject(): PageObject | null {
+    return this.object;
+  }
+
+  clearObject(): void {
+    if (!this.object) return;
+    this.object = null;
+    this.paint(false);
+  }
+
+  /** 고른 개체에 대한 편집 (크기·삭제 등). 끝나면 선택을 푼다. */
+  objectCommand(fn: (doc: EditableDocument, obj: PageObject) => void): void {
+    const obj = this.object;
+    if (!obj) return;
+    this.object = null;
+    this.command((doc) => fn(doc, obj));
   }
 
   private onDoubleTap(x: number, y: number): void {
@@ -169,7 +210,7 @@ export class Editor {
       this.caret = pos;
     }
     this.paint(phase === 'end');
-    if (phase === 'end' && this.mode === 'edit') this.input.focus();
+    if (phase === 'end' && this.mode === 'edit' && !this.keyboardSuppressed) this.input.focus();
   }
 
   private selectWordAt(x: number, y: number): void {
@@ -179,9 +220,11 @@ export class Editor {
     const [s, e] = wordBounds(this.doc.paraText(pos), pos.offset);
     this.anchor = { ...pos, offset: s };
     this.caret = { ...pos, offset: e };
+    this.caretHandle = false;
+    this.object = null;
     this.pendingChar = null;
     this.paint(true);
-    if (this.mode === 'edit') this.input.focus();
+    if (this.mode === 'edit' && !this.keyboardSuppressed) this.input.focus();
   }
 
   private attachHandleDrag(): void {
@@ -189,6 +232,7 @@ export class Editor {
       e.preventDefault();
       e.stopPropagation();
       this.dragging = side;
+      if (side === 'caret') return;
       // 움직이는 쪽이 caret, 고정된 쪽이 anchor가 되도록 바꿔 둔다.
       if (!this.caret || !this.anchor) return;
       const [s, en] = orderRange(this.anchor, this.caret);
@@ -199,7 +243,15 @@ export class Editor {
       if (!this.dragging || !this.caret) return;
       const lift = (this.caretRect(this.caret)?.height ?? 16) * this.view.zoom * 0.8;
       const pos = this.hit(clientX, clientY - lift);
-      if (!pos || !this.anchor || !sameContainer(pos, this.anchor) || samePos(pos, this.anchor)) return;
+      if (!pos) return;
+      if (this.dragging === 'caret') {
+        this.input.commitComposition();
+        this.caret = pos;
+        this.pendingChar = null;
+        this.paint(false);
+        return;
+      }
+      if (!this.anchor || !sameContainer(pos, this.anchor) || samePos(pos, this.anchor)) return;
       this.caret = pos;
       this.paint(false);
     };
@@ -208,7 +260,7 @@ export class Editor {
       this.dragging = null;
       this.paint(false);
     };
-    for (const side of ['start', 'end'] as const) {
+    for (const side of ['start', 'end', 'caret'] as const) {
       const el = this.overlay.handle(side);
       el.addEventListener('touchstart', onStart(side), { passive: false });
       el.addEventListener('pointerdown', (e) => {
@@ -288,16 +340,18 @@ export class Editor {
     }
     const sel = this.selection;
     const rect = this.caretRect(this.caret);
+    const editing = this.mode === 'edit' && !this.object;
     if (sel) {
       const rects = doc.selectionRects(sel[0], sel[1]);
       this.overlay.showSelection(rects, this.caretRect(sel[0]), this.caretRect(sel[1]), true);
-      this.overlay.showCaret(this.mode === 'edit' ? rect : null);
+      this.overlay.showCaret(editing ? rect : null);
     } else {
       this.overlay.clearSelection();
-      this.overlay.showCaret(this.mode === 'edit' ? rect : null);
+      this.overlay.showCaret(editing ? rect : null, true, editing && this.caretHandle);
     }
+    this.overlay.showObject(this.object);
     if (rect) {
-      if (reveal) this.view.reveal(rect.pageIndex, rect.x, rect.y, rect.height, this.hostApi.bottomInset());
+      if (reveal) this.view.reveal(rect.pageIndex, rect.x, rect.y, rect.height);
       this.syncInputPosition(rect);
     }
     this.positionMenu();
@@ -313,6 +367,16 @@ export class Editor {
   }
 
   private positionMenu(): void {
+    if (this.object) {
+      const overlay = this.view.overlay(this.object.page);
+      const r = overlay?.getBoundingClientRect();
+      const z = this.view.zoom;
+      const o = this.object;
+      this.hostApi.selectionMenu(null);
+      this.hostApi.objectSelected(o, r ? { x: r.left + (o.x + o.w / 2) * z, top: r.top + o.y * z, bottom: r.top + (o.y + o.h) * z } : null);
+      return;
+    }
+    this.hostApi.objectSelected(null, null);
     const sel = this.selection;
     if (!sel || this.dragging) {
       this.hostApi.selectionMenu(null);
@@ -368,6 +432,8 @@ export class Editor {
     const doc = this.doc;
     if (!doc || !this.caret || !this.history) return false;
     this.history.record(this.caret, group);
+    this.caretHandle = false;
+    this.object = null;
     try {
       this.caret = fn();
     } catch (err) {
@@ -508,14 +574,42 @@ export class Editor {
     return ok;
   }
 
-  insertPicture(bytes: Uint8Array, w: number, h: number, ext: string): void {
-    if (!this.caret) return;
-    const page = this.caretRect(this.caret)?.pageIndex ?? 0;
-    const info = JSON.parse(this.doc!.raw.getPageInfo(page)) as { bodyLeft: number; bodyRight: number };
-    this.edit(null, () => {
-      this.doc!.insertPicture(this.caret!, bytes, w, h, ext, info.bodyRight - info.bodyLeft);
-      return this.caret!;
+  /** 캐럿이 있는 쪽의 본문 폭 (px) — 그림·글상자 크기 기준 */
+  bodyWidth(): number {
+    const page = this.caret ? (this.caretRect(this.caret)?.pageIndex ?? 0) : 0;
+    try {
+      const info = JSON.parse(this.doc!.raw.getPageInfo(page)) as { bodyLeft: number; bodyRight: number };
+      return info.bodyRight - info.bodyLeft;
+    } catch {
+      return 600;
+    }
+  }
+
+  /**
+   * 도구 패널의 편집 명령. 실행 취소 기록과 다시 그리기를 함께 처리한다.
+   * fn 이 새 캐럿 위치를 돌려주면 그리로 옮기고, 돌려주지 않으면 캐럿·선택을 그대로 둔다.
+   */
+  command(fn: (doc: EditableDocument, caret: DocPos, selection: [DocPos, DocPos] | null) => DocPos | void): boolean {
+    if (!this.caret || !this.doc) return false;
+    const keep = { anchor: this.anchor, caret: this.caret };
+    const sel = this.selection;
+    let moved = false;
+    const ok = this.edit(null, () => {
+      const next = fn(this.doc!, keep.caret, sel);
+      moved = !!next;
+      return next ?? keep.caret;
     });
+    if (ok && !moved && keep.anchor) {
+      this.anchor = keep.anchor;
+      this.paint(false);
+    }
+    return ok;
+  }
+
+  /** 문서 표시 방식만 바꿨을 때 (조판 부호 보기 등) */
+  rerender(): void {
+    this.view.refresh(this.caret ? (this.caretRect(this.caret)?.pageIndex ?? -1) : -1);
+    this.paint(false);
   }
 
   replaceAll(query: string, replacement: string): number {
@@ -536,6 +630,20 @@ export class Editor {
     this.input.commitComposition();
     this.anchor = start;
     this.caret = end;
+    this.paint(true);
+  }
+
+  /** 캐럿이 있는 높이를 기준으로 본문 폭 맞춤 확대를 한다. */
+  fitBodyAtCaret(): void {
+    const rect = this.caret ? this.caretRect(this.caret) : null;
+    const overlay = rect ? this.view.overlay(rect.pageIndex) : null;
+    const y = rect && overlay ? overlay.getBoundingClientRect().top + rect.y * this.view.zoom : this.view.scroller.getBoundingClientRect().top + 80;
+    this.view.fitBody(y);
+    this.paint(true);
+  }
+
+  /** 캐럿이 화면(키보드·도구 패널 위)에 보이도록 스크롤한다. */
+  revealCaret(): void {
     this.paint(true);
   }
 

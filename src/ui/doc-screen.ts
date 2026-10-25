@@ -5,9 +5,11 @@ import { copyText, readText } from '../platform/clipboard';
 import { askText } from './dialog';
 import { openExportSheet, openInfoSheet, openPagesSheet } from './doc-sheets';
 import { h, keepFocus } from './dom';
-import { openFormatSheet, openInsertSheet } from './edit-sheets';
-import { FormatToolbar } from './format-toolbar';
 import { icon } from './icons';
+import { type PageObject, deleteObject, equationScript, isImageInline, scaleObject, setEquationScript, setImageInline } from '../doc/ops/objects';
+import { openEquationSheet } from './panel/equation-sheet';
+import { ToolPanel } from './panel/tool-panel';
+import { QuickBar } from './quick-bar';
 import { openReader } from './reader';
 import { SearchBar } from './search-bar';
 import { Sheet } from './sheet';
@@ -19,12 +21,13 @@ import { toast } from './toast';
 export class DocScreen {
   readonly el: HTMLElement;
   private readonly editor: Editor;
-  private readonly toolbar: FormatToolbar;
+  private readonly quickBar: QuickBar;
+  private readonly panel: ToolPanel;
   private readonly title = h('div.app-title');
   private readonly status = h('div.app-status');
   private readonly appBar: HTMLElement;
   private readonly pill = h('div.page-pill', { 'aria-hidden': 'true' });
-  private readonly fab: HTMLButtonElement;
+  private readonly viewBar: HTMLElement;
   private readonly menu = h('div.selection-menu', { role: 'menu' });
   private readonly search: SearchBar;
   private pillTimer = 0;
@@ -45,7 +48,7 @@ export class DocScreen {
       state: (s) => this.onState(s),
       toggleChrome: () => this.el.classList.toggle('immersive'),
       selectionMenu: (a) => this.positionMenu(a),
-      bottomInset: () => this.bottomInset(),
+      objectSelected: (obj, anchor) => this.showObjectMenu(obj, anchor),
       shortcut: (k) => {
         if (k === 's') {
           void session.save().then(() => toast('보관함에 저장했어요.'));
@@ -59,15 +62,58 @@ export class DocScreen {
       },
     });
     session.onSaved = () => this.setStatus('자동 저장됨');
-    this.toolbar = new FormatToolbar(this.editor, {
-      openFormatSheet: () => openFormatSheet(this.editor),
-      openInsertSheet: () => openInsertSheet(this.editor),
-      toggleKeyboard: () => (this.editor.input.focused ? this.editor.input.blur() : this.editor.input.focus()),
+    this.panel = new ToolPanel({
+      editor: this.editor,
+      session,
+      state: () => this.state!,
+      openSearch: () => this.openSearch(),
+      openReader: () => this.openReader(),
+      openPages: () => openPagesSheet(this.session, this.editor.view),
+      openInfo: () => openInfoSheet(this.session),
     });
+    this.panel.onToggle = (open) => {
+      this.el.classList.toggle('panel-open', open);
+      this.editor.keyboardSuppressed = open;
+      this.quickBar.syncPanel();
+      // 패널 높이만큼 문서가 가려지므로 캐럿이 보이게 다시 맞춘다.
+      requestAnimationFrame(() => this.editor.revealCaret());
+    };
+    this.panel.onTabChange = () => this.quickBar.syncPanel();
+    this.quickBar = new QuickBar(this.editor, {
+      openPanel: (tab) => this.openPanel(tab),
+      toggleKeyboard: () => {
+        if (this.panel.isOpen) this.showKeyboard();
+        else if (this.editor.input.focused) this.editor.input.blur();
+        else this.editor.input.focus();
+      },
+      panelTab: () => this.panel.activeTab,
+    });
+    // 글을 쓰려고 입력칸에 포커스가 가면(문서를 탭하면) 도구 패널을 닫는다.
+    this.editor.input.el.addEventListener('focus', () => this.panel.close());
     this.search = new SearchBar(this.editor, () => this.closeSearch());
     this.appBar = h('header.app-bar.doc-bar');
-    this.fab = h('button.fab', { 'aria-label': '편집하기', onclick: () => this.setEditing(true) }, icon('edit'), h('span', {}, '편집'));
-    this.el = h('main.screen.doc', {}, this.appBar, this.search.el, body, this.pill, this.fab, this.menu, this.toolbar.el);
+    const viewBtn = (name: Parameters<typeof icon>[0], label: string, aria: string, onClick: () => void) =>
+      h('button.vb', { type: 'button', 'aria-label': aria, onclick: onClick }, icon(name, 22), h('span', {}, label));
+    this.viewBar = h(
+      'nav.view-bar',
+      { 'aria-label': '문서 도구' },
+      viewBtn('search', '찾기', '찾기', () => this.openSearch()),
+      viewBtn('book', '읽기 모드', '읽기 모드', () => this.openReader()),
+      viewBtn('pages', '쪽', '쪽 모아 보기', () => openPagesSheet(this.session, this.editor.view)),
+      viewBtn('share', '보내기', '보내기', () => openExportSheet(this.session)),
+      h('button.edit-btn', { type: 'button', 'aria-label': '편집하기', onclick: () => this.setEditing(true) }, icon('edit', 20), h('span', {}, '편집')),
+    );
+    this.el = h(
+      'main.screen.doc',
+      {},
+      this.appBar,
+      this.search.el,
+      body,
+      this.pill,
+      this.viewBar,
+      this.menu,
+      h('div.edit-dock', {}, this.quickBar.el, this.panel.el),
+    );
     this.search.el.hidden = true;
     this.menu.hidden = true;
     const menuOnScroll = this.editor.view.onScroll;
@@ -87,11 +133,6 @@ export class DocScreen {
 
   private setStatus(text: string): void {
     this.status.textContent = text;
-  }
-
-  private bottomInset(): number {
-    const kb = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--kb')) || 0;
-    return kb + (this.editor.currentMode === 'edit' ? this.toolbar.el.offsetHeight : 0);
   }
 
   // ───────────── 상단 바 ─────────────
@@ -115,14 +156,7 @@ export class DocScreen {
         btn('search', '찾기·바꾸기', () => this.openSearch()),
       );
     } else {
-      this.appBar.replaceChildren(
-        btn('back', '문서 닫기', () => this.onExit()),
-        titleBox,
-        btn('search', '찾기', () => this.openSearch()),
-        btn('book', '읽기 모드', () => this.openReader()),
-        btn('share', '보내기', () => openExportSheet(this.session)),
-        btn('more', '더보기', () => this.more()),
-      );
+      this.appBar.replaceChildren(btn('back', '문서 닫기', () => this.onExit()), titleBox, btn('more', '더보기', () => this.more()));
     }
   }
 
@@ -154,12 +188,15 @@ export class DocScreen {
     this.el.classList.toggle('editing', on);
     this.el.classList.remove('immersive');
     this.editor.setMode(on ? 'edit' : 'view');
+    // 편집할 때는 글자가 읽히는 크기(본문 폭 맞춤)로 키운다.
+    if (on && this.editor.view.zoomFactorValue < 1.05) this.editor.fitBodyAtCaret();
     if (on) {
       this.editBack = backScope(() => {
         this.editBack = null;
         this.setEditing(false);
       });
     } else {
+      this.panel.close();
       this.editBack?.dismiss();
       this.editBack = null;
       void this.session.save();
@@ -167,10 +204,27 @@ export class DocScreen {
     this.renderAppBar();
   }
 
+  /** 도구 패널을 연다 (키보드는 내린다). 같은 탭을 다시 누르면 키보드로 돌아간다. */
+  openPanel(tab: string): void {
+    if (this.panel.activeTab === tab) {
+      this.showKeyboard();
+      return;
+    }
+    if (this.editor.currentMode !== 'edit') this.setEditing(true);
+    this.editor.input.blur();
+    this.panel.open(tab);
+  }
+
+  private showKeyboard(): void {
+    this.panel.close();
+    this.editor.input.focus();
+  }
+
   private onState(s: EditorState): void {
     const historyChanged = s.canUndo !== this.state?.canUndo || s.canRedo !== this.state?.canRedo;
     this.state = s;
-    this.toolbar.update(s);
+    this.quickBar.update(s, this.editor.document);
+    this.panel.refresh();
     if (historyChanged && s.mode === 'edit') this.renderAppBar();
   }
 
@@ -210,16 +264,57 @@ export class DocScreen {
 
   private positionMenu(anchor: { x: number; top: number; bottom: number } | null): void {
     if (!anchor) {
-      this.menu.hidden = true;
+      if (this.menu.dataset.mode !== 'object') this.menu.hidden = true;
       return;
     }
     if (this.menu.hidden || this.menu.dataset.mode !== this.editor.currentMode) this.fillMenu();
     this.menu.hidden = false;
+    this.placeMenu({ ...anchor, bottom: anchor.bottom + 16 });
+  }
+
+  /** 고른 그림·수식·글상자 위에 띄우는 메뉴 */
+  private showObjectMenu(obj: PageObject | null, anchor: { x: number; top: number; bottom: number } | null): void {
+    if (!obj || !anchor) {
+      if (this.menu.dataset.mode === 'object') this.menu.hidden = true;
+      return;
+    }
+    const key = `object:${obj.kind}:${obj.para}:${obj.ctrl}`;
+    if (this.menu.hidden || this.menu.dataset.mode !== 'object' || this.menu.dataset.key !== key) {
+      const ed = this.editor;
+      const item = (label: string, run: () => void) => keepFocus(h('button', { role: 'menuitem', onclick: run }, label));
+      const items: HTMLElement[] = [];
+      if (obj.kind !== 'equation') {
+        items.push(item('크게', () => ed.objectCommand((doc, o) => scaleObject(doc, o, 1.2))));
+        items.push(item('작게', () => ed.objectCommand((doc, o) => scaleObject(doc, o, 1 / 1.2))));
+      }
+      if (obj.kind === 'image' && ed.document) {
+        const inline = isImageInline(ed.document, obj);
+        items.push(item(inline ? '글 둘레로 배치' : '글자처럼 배치', () => ed.objectCommand((doc, o) => setImageInline(doc, o, !inline))));
+      }
+      if (obj.kind === 'equation' && ed.document) {
+        const script = equationScript(ed.document, obj);
+        items.push(
+          item('수식 고치기', () => {
+            ed.clearObject();
+            openEquationSheet(ed, { script, apply: (next) => ed.command((doc) => setEquationScript(doc, obj, next)) });
+          }),
+        );
+      }
+      items.push(item('삭제', () => ed.objectCommand((doc, o) => deleteObject(doc, o))));
+      this.menu.replaceChildren(...items);
+      this.menu.dataset.mode = 'object';
+      this.menu.dataset.key = key;
+    }
+    this.menu.hidden = false;
+    this.placeMenu(anchor);
+  }
+
+  private placeMenu(anchor: { x: number; top: number; bottom: number }): void {
     const w = this.menu.offsetWidth;
     const hgt = this.menu.offsetHeight;
     const x = Math.min(Math.max(anchor.x - w / 2, 8), window.innerWidth - w - 8);
     const above = anchor.top - hgt - 12;
-    const y = above > 64 ? above : anchor.bottom + 28;
+    const y = above > 64 ? above : anchor.bottom + 12;
     this.menu.style.transform = `translate(${x}px, ${y}px)`;
   }
 
@@ -244,7 +339,7 @@ export class DocScreen {
           else toast('붙여 넣을 글이 없어요.');
         }),
       item('모두 선택', () => this.editor.selectAll()),
-      editing && item('서식', () => openFormatSheet(this.editor)),
+      editing && item('서식', () => this.openPanel('char')),
       !editing && item('편집', () => this.setEditing(true)),
     ].filter((x): x is HTMLElement => !!x);
     this.menu.replaceChildren(...items);

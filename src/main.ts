@@ -5,6 +5,7 @@ import { engineVersion, initEngine } from './engine/rhwp';
 import { MIME } from './platform/bytes';
 import { isNative, listenIncomingFiles, pickFile, shareFile } from './platform/files';
 import { library } from './platform/library';
+import { askText } from './ui/dialog';
 import { DocScreen } from './ui/doc-screen';
 import { h } from './ui/dom';
 import { HomeScreen } from './ui/home';
@@ -20,7 +21,8 @@ let busy = false;
 const home = new HomeScreen({
   openFile: () => void chooseFile(),
   newDocument: () => void withLoading(() => DocumentSession.createBlank(), true),
-  openEntry: (id) => void withLoading(() => DocumentSession.openEntry(id)),
+  openSample: () => void withLoading(() => DocumentSession.createSample()),
+  openEntry: (id) => void withLoading((pw) => DocumentSession.openEntry(id, pw)),
   shareEntry: (id) => void shareEntry(id),
   about: () => openAbout(),
 });
@@ -55,27 +57,49 @@ async function chooseFile(): Promise<void> {
 }
 
 async function openBytes(name: string, data: Promise<ArrayBuffer | Uint8Array>): Promise<void> {
-  await withLoading(async () => DocumentSession.open(name, new Uint8Array(await data)));
+  const bytes = new Uint8Array(await data);
+  await withLoading((pw) => DocumentSession.open(name, bytes, undefined, pw));
 }
 
-/** 문서를 여는 동안 로딩 화면을 보여 주고, 열리면 문서 화면으로 넘어간다. */
-async function withLoading(open: () => Promise<DocumentSession | null>, startEditing = false): Promise<void> {
+const isPasswordError = (err: unknown) => /암호|비밀번호|password|encrypt/i.test(String(err));
+const isWrongPassword = (err: unknown) => /일치하지 않|incorrect|wrong/i.test(String(err));
+
+/**
+ * 문서를 여는 동안 로딩 화면을 보여 주고, 열리면 문서 화면으로 넘어간다.
+ * 암호 문서면 암호를 물어보고 다시 연다.
+ */
+async function withLoading(open: (password?: string) => Promise<DocumentSession | null>, startEditing = false): Promise<void> {
   if (busy) return;
   busy = true;
   const loading = h('div.loading', { role: 'status' }, h('div.spinner'), h('p', {}, '문서를 여는 중…'));
   app.append(loading);
   try {
     if (docScreen) await closeDoc();
-    const session = await open();
-    if (!session) {
-      toast('문서를 찾지 못했어요.');
-      return;
+    let password: string | undefined;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const session = await open(password);
+        if (!session) toast('문서를 찾지 못했어요.');
+        else showDoc(session, startEditing);
+        return;
+      } catch (err) {
+        if (!isPasswordError(err) || attempt >= 3) throw err;
+        loading.hidden = true;
+        const answer = await askText('문서 암호', '', '열기', {
+          secret: true,
+          message: password && isWrongPassword(err) ? '암호가 맞지 않아요. 다시 입력해 주세요.' : '암호가 걸린 문서예요. 암호를 입력해 주세요.',
+        });
+        loading.hidden = false;
+        if (!answer) return;
+        password = answer;
+      }
     }
-    showDoc(session, startEditing);
   } catch (err) {
     console.error(err);
-    const msg = String(err);
-    toast(/비밀번호|password/i.test(msg) ? '암호가 걸린 문서는 아직 열 수 없어요.' : '이 문서를 열지 못했어요. 손상되었거나 지원하지 않는 형식일 수 있어요.', 4000);
+    toast(
+      isPasswordError(err) ? '암호가 맞지 않거나 지원하지 않는 암호 방식이에요.' : '이 문서를 열지 못했어요. 손상되었거나 지원하지 않는 형식일 수 있어요.',
+      4000,
+    );
   } finally {
     loading.remove();
     busy = false;

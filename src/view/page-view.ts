@@ -236,8 +236,8 @@ export class PageView {
     if (slot) this.scroller.scrollTo({ top: slot.el.offsetTop - PAD, behavior: 'auto' });
   }
 
-  /** 페이지 좌표의 세로 구간이 [위 여백, 아래 여백]을 뺀 화면 안에 보이도록 스크롤한다. */
-  reveal(page: number, x: number, y: number, h: number, bottomInset = 0): void {
+  /** 페이지 좌표의 세로 구간이 화면 안에 보이도록 스크롤한다. */
+  reveal(page: number, x: number, y: number, h: number): void {
     const slot = this.slots[page];
     if (!slot) return;
     const top = slot.el.offsetTop + y * this.zoom;
@@ -245,9 +245,9 @@ export class PageView {
     const left = slot.el.offsetLeft + x * this.zoom;
     const margin = 48;
     const viewTop = this.scroller.scrollTop;
-    const viewBottom = viewTop + this.scroller.clientHeight - bottomInset;
+    const viewBottom = viewTop + this.scroller.clientHeight;
     if (top < viewTop + margin) this.scroller.scrollTop = top - margin;
-    else if (bottom > viewBottom - margin) this.scroller.scrollTop = bottom - (this.scroller.clientHeight - bottomInset) + margin;
+    else if (bottom > viewBottom - margin) this.scroller.scrollTop = bottom - this.scroller.clientHeight + margin;
     const viewLeft = this.scroller.scrollLeft;
     if (left < viewLeft + 24 || left > viewLeft + this.scroller.clientWidth - 24) {
       this.scroller.scrollLeft = left - this.scroller.clientWidth / 2;

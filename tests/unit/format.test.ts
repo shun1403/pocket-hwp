@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readLoss } from '../../src/export/exporters';
-import { nextFontSize } from '../../src/ui/format-toolbar';
+import { nextFontSize } from '../../src/ui/panel/font-size';
 
 describe('nextFontSize', () => {
   it('단계를 따라 커지고 작아진다', () => {
