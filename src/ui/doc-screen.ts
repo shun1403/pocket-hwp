@@ -2,6 +2,7 @@ import { backScope } from '../app/back';
 import type { DocumentSession } from '../app/session';
 import { Editor, type EditorState } from '../editor/editor';
 import { copyText, readText } from '../platform/clipboard';
+import { isNative } from '../platform/files';
 import { askText } from './dialog';
 import { openExportSheet, openInfoSheet, openPagesSheet } from './doc-sheets';
 import { h, keepFocus } from './dom';
@@ -14,6 +15,9 @@ import { openReader } from './reader';
 import { SearchBar } from './search-bar';
 import { Sheet } from './sheet';
 import { toast } from './toast';
+
+/** 한 번 키보드 높이를 못 잰 환경이면 다음부터는 기다리지 않고 바로 위에 붙인다. */
+let keyboardUnmeasurable = false;
 
 /**
  * 문서 화면. 보기 모드(읽기·확대·찾기)와 편집 모드(키보드·서식 도구)를 오간다.
@@ -34,6 +38,7 @@ export class DocScreen {
   private editBack: { dismiss: () => void } | null = null;
   private searchBack: { dismiss: () => void } | null = null;
   private state: EditorState | null = null;
+  private dockTimer = 0;
 
   constructor(
     private readonly session: DocumentSession,
@@ -89,7 +94,14 @@ export class DocScreen {
       panelTab: () => this.panel.activeTab,
     });
     // 글을 쓰려고 입력칸에 포커스가 가면(문서를 탭하면) 도구 패널을 닫는다.
-    this.editor.input.el.addEventListener('focus', () => this.panel.close());
+    this.editor.input.el.addEventListener('focus', () => {
+      this.panel.close();
+      this.watchKeyboard();
+    });
+    this.editor.input.el.addEventListener('blur', () => {
+      window.clearTimeout(this.dockTimer);
+      this.setDockTop(false);
+    });
     this.search = new SearchBar(this.editor, () => this.closeSearch());
     this.appBar = h('header.app-bar.doc-bar');
     const viewBtn = (name: Parameters<typeof icon>[0], label: string, aria: string, onClick: () => void) =>
@@ -202,6 +214,28 @@ export class DocScreen {
       void this.session.save();
     }
     this.renderAppBar();
+  }
+
+  /**
+   * 키보드가 올라왔는데 화면이 줄지 않으면(앱 안 미리보기 창처럼 키보드 높이를 알 수 없는 곳)
+   * 아래쪽 편집 도구가 키보드에 가려진다. 그때는 도구 줄을 화면 위로 옮긴다.
+   */
+  private watchKeyboard(): void {
+    window.clearTimeout(this.dockTimer);
+    if (isNative || !matchMedia('(pointer: coarse)').matches) return;
+    if (keyboardUnmeasurable) this.setDockTop(true);
+    // 키보드가 다 올라온 뒤 화면이 줄었는지 본다.
+    this.dockTimer = window.setTimeout(() => {
+      if (!this.editor.input.focused) return;
+      keyboardUnmeasurable = !document.documentElement.classList.contains('kb-open');
+      this.setDockTop(keyboardUnmeasurable);
+    }, 500);
+  }
+
+  private setDockTop(on: boolean): void {
+    if (this.el.classList.contains('dock-top') === on) return;
+    this.el.classList.toggle('dock-top', on);
+    requestAnimationFrame(() => this.editor.revealCaret());
   }
 
   /** 도구 패널을 연다 (키보드는 내린다). 같은 탭을 다시 누르면 키보드로 돌아간다. */

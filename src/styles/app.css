@@ -720,6 +720,26 @@ input:focus-visible {
   padding-bottom: var(--safe-bottom);
 }
 
+/*
+ * 키보드 높이를 알 수 없는 곳(앱 안 미리보기 창 등): 도구 줄을 제목 바로 아래로 옮기고,
+ * 키보드가 덮을 아래쪽을 비워 둔다.
+ */
+.doc.dock-top .edit-dock {
+  position: relative;
+  bottom: auto;
+  order: 1;
+  padding-bottom: 0 !important;
+  box-shadow: 0 1px 0 var(--line);
+}
+
+.doc.dock-top .doc-body {
+  order: 2;
+}
+
+.doc.dock-top.editing .page-scroller {
+  bottom: 45vh;
+}
+
 .quick-bar {
   display: flex;
   align-items: center;

@@ -127,6 +127,13 @@ await step('탭하면 캐럿 손잡이가 나오고, 끌면 캐럿이 옮겨진�
   assert.equal(await paraText(), 'Second line');
 });
 
+await step('키보드 높이를 알 수 없으면 편집 도구 줄이 화면 위에 붙는다', async () => {
+  // 에뮬레이터에는 가상 키보드가 없어 앱 안 미리보기 창과 같은 상황이 된다.
+  await page.waitForFunction(() => document.querySelector('.doc')?.classList.contains('dock-top'));
+  const bar = await page.locator('.quick-bar').boundingBox();
+  assert.ok(bar.y < 200, `도구 줄 위치 ${bar.y}`);
+});
+
 await step('실행 취소·다시 실행', async () => {
   await page.keyboard.type('XYZ');
   assert.match(await paraText(), /^XYZ/);
