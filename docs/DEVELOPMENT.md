@@ -97,6 +97,18 @@ rhwp의 글자 위치(charOffset)에는 개체(각주·수식·그림 등)가 �
 rhwp 스냅샷(`saveSnapshot`/`restoreSnapshot`)을 씁니다. 연속 타이핑은 한 단계로 묶고, 버려진 스냅샷은
 `discardSnapshot`으로 해제합니다. 한도는 엔진의 `snapshotCapacity()`를 넘지 않습니다.
 
+### 보관함과 데이터 보호
+
+문서는 IndexedDB(`platform/library.ts`)에만 저장하고 서버로 보내지 않습니다. 웹 앱에서는 브라우저가
+저장 공간 부족이나(모든 브라우저) 오래 쓰지 않음(사파리)을 이유로 데이터를 지울 수 있으므로:
+
+- 문서를 처음 열 때 `navigator.storage.persist()`를 요청합니다 (`platform/storage.ts`).
+- 각 문서에 `exportedAt`(마지막으로 앱 밖에 HWP/HWPX 사본을 남긴 때)을 기록하고, 편집 뒤 아직 내보내지 않은
+  문서는 홈에서 "백업 전"으로 표시하고 알림을 띄웁니다.
+- 보관함 전체를 ZIP(`export/zip.ts`, 압축 없이 담는 형식)으로 백업·복원합니다 (`app/backup.ts`).
+  ZIP 안에는 문서 파일과 `pocket-hwp-backup.json` 목록이 들어 있어, 다른 앱에서 풀어도 바로 열 수 있습니다.
+- 아이폰 사파리 탭에서 열면 홈 화면에 추가하라고 안내합니다 (탭과 홈 화면 앱은 보관함이 따로입니다).
+
 ### 받은 파일
 
 - 안드로이드: `MainActivity`가 `content://` 문서를 앱 캐시에 원래 이름으로 복사하고 `file://` VIEW 인텐트로 바꿔

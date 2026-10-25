@@ -5,6 +5,7 @@ import { engineVersion, initEngine } from './engine/rhwp';
 import { MIME } from './platform/bytes';
 import { isNative, listenIncomingFiles, pickFile, shareFile } from './platform/files';
 import { library } from './platform/library';
+import { requestPersistence } from './platform/storage';
 import { askText } from './ui/dialog';
 import { DocScreen } from './ui/doc-screen';
 import { h } from './ui/dom';
@@ -112,6 +113,8 @@ function showDoc(session: DocumentSession, startEditing: boolean): void {
   home.el.hidden = true;
   app.append(screen.el);
   screen.mount();
+  // 문서를 다루기 시작하면 브라우저에 보관함을 지우지 말라고 요청한다.
+  void requestPersistence();
   leaveDoc = onBack(() => {
     leaveDoc = null;
     void closeDoc();
@@ -135,6 +138,10 @@ async function shareEntry(id: string): Promise<void> {
   if (!entry) return;
   const result = await shareFile(entry.name, entry.bytes, MIME[entry.format]);
   if (result === 'downloaded') toast('파일을 내려받았어요.');
+  if (result !== 'cancelled') {
+    await library.markExported([id]);
+    await home.refresh();
+  }
 }
 
 function openAbout(): void {

@@ -11,6 +11,10 @@
   --line: #e2e5ea;
   --desk: #e4e6eb;
   --danger: #d93025;
+  --warn-bg: #fff4e0;
+  --warn-text: #7a4b00;
+  --ok-bg: #e6f4ea;
+  --ok-text: #0d652d;
   --shadow: 0 6px 24px rgb(15 23 42 / 0.12);
   --radius: 16px;
   --kb: 0px;
@@ -37,11 +41,19 @@
     --line: #2f333b;
     --desk: #0b0c0e;
     --shadow: 0 6px 24px rgb(0 0 0 / 0.5);
+    --warn-bg: #3a2c12;
+    --warn-text: #ffd27a;
+    --ok-bg: #12301d;
+    --ok-text: #8fd6a4;
     color-scheme: dark;
   }
 }
 
 :root[data-theme='dark'] {
+  --warn-bg: #3a2c12;
+  --warn-text: #ffd27a;
+  --ok-bg: #12301d;
+  --ok-text: #8fd6a4;
   --brand: #7c9cff;
   --brand-strong: #a3bbff;
   --brand-weak: #253055;
@@ -333,6 +345,120 @@ input:focus-visible {
   background: var(--brand-weak);
   color: var(--brand);
   font-weight: 700;
+}
+
+.header-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.notices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.notices:empty {
+  display: none;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 8px 12px 14px;
+  border-radius: 14px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.notice.info {
+  background: var(--brand-weak);
+  color: var(--text);
+}
+
+.notice > .icon {
+  flex: none;
+}
+
+.notice-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.notice-text strong {
+  font-size: 15px;
+}
+
+.notice-btn {
+  flex: none;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--brand);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.notice-close {
+  width: 36px;
+  height: 36px;
+}
+
+.badge.warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.storage-state {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 0 8px 12px;
+  padding: 14px;
+  border-radius: 14px;
+}
+
+.storage-state.safe {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+
+.storage-state.warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.storage-state p {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+
+.secondary-btn.full {
+  width: calc(100% - 16px);
+  margin: 0 8px 8px;
+}
+
+.howto {
+  margin: 8px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.howto ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.howto p {
+  margin: 0;
+  font-size: 13px;
 }
 
 .empty-art {

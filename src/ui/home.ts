@@ -1,8 +1,10 @@
-import { type LibrarySummary, library } from '../platform/library';
+import { type LibrarySummary, library, needsBackup } from '../platform/library';
+import { isIosBrowserTab } from '../platform/storage';
 import { askConfirm } from './dialog';
 import { h } from './dom';
 import { icon } from './icons';
 import { Sheet } from './sheet';
+import { backupAll, homeScreenHelp, openStorageSheet } from './storage-sheet';
 
 export interface HomeActions {
   openFile(): void;
@@ -34,6 +36,7 @@ function sizeLabel(bytes: number): string {
 export class HomeScreen {
   readonly el: HTMLElement;
   private readonly list: HTMLElement;
+  private readonly notices = h('div.notices');
 
   constructor(private readonly actions: HomeActions) {
     this.list = h('div.recent-list', { role: 'list' });
@@ -44,7 +47,12 @@ export class HomeScreen {
         'header.home-header',
         {},
         h('div.brand', {}, h('img.brand-mark', { src: './icons/icon.svg', alt: '', width: 36, height: 36 }), h('span', {}, 'Pocket HWP')),
-        h('button.icon-btn', { 'aria-label': '앱 정보', onclick: () => actions.about() }, icon('info')),
+        h(
+          'div.header-actions',
+          {},
+          h('button.icon-btn', { 'aria-label': '보관함 관리', onclick: () => void openStorageSheet(() => void this.refresh()) }, icon('shield')),
+          h('button.icon-btn', { 'aria-label': '앱 정보', onclick: () => actions.about() }, icon('info')),
+        ),
       ),
       h(
         'section.home-actions',
@@ -64,6 +72,7 @@ export class HomeScreen {
           h('span.action-sub', {}, '빈 문서로 시작'),
         ),
       ),
+      this.notices,
       h('h2.section-title', {}, '최근 문서'),
       this.list,
     );
@@ -77,6 +86,7 @@ export class HomeScreen {
     } catch {
       // 사생활 보호 모드 등에서 IndexedDB가 막혀 있으면 빈 목록으로 둔다.
     }
+    this.renderNotices(items);
     this.list.replaceChildren();
     if (items.length === 0) {
       this.list.append(
@@ -94,11 +104,49 @@ export class HomeScreen {
     for (const item of items) this.list.append(this.card(item));
   }
 
+  /** 데이터가 사라질 수 있는 상황을 알려 주는 안내 카드 */
+  private renderNotices(items: LibrarySummary[]): void {
+    this.notices.replaceChildren();
+    const unbacked = items.filter(needsBackup).length;
+    if (unbacked > 0) {
+      this.notices.append(
+        h(
+          'div.notice',
+          {},
+          icon('shield', 22),
+          h('div.notice-text', {}, h('strong', {}, `편집한 문서 ${unbacked}개가 이 기기에만 있어요`), h('span', {}, '백업해 두면 앱을 지우거나 기기를 바꿔도 되살릴 수 있어요.')),
+          h('button.notice-btn', { onclick: async () => (await backupAll()) && void this.refresh() }, '백업'),
+        ),
+      );
+    }
+    if (isIosBrowserTab() && !dismissed('ios-home-screen')) {
+      const card: HTMLElement = h(
+        'div.notice.info',
+        {},
+        icon('homeAdd', 22),
+        h('div.notice-text', {}, h('strong', {}, '홈 화면에 추가해서 쓰세요'), h('span', {}, '사파리 탭에서는 오래 쓰지 않으면 문서가 지워질 수 있어요.')),
+        h(
+          'button.notice-btn',
+          {
+            onclick: () => {
+              const sheet = new Sheet({ title: '홈 화면에 추가' });
+              sheet.body.append(homeScreenHelp());
+              sheet.open();
+            },
+          },
+          '방법',
+        ),
+        h('button.icon-btn.notice-close', { 'aria-label': '안내 닫기', onclick: () => (dismiss('ios-home-screen'), card.remove()) }, icon('close', 18)),
+      );
+      this.notices.append(card);
+    }
+  }
+
   private card(item: LibrarySummary): HTMLElement {
     const thumb = item.thumbnail
       ? h('img.recent-thumb', { src: item.thumbnail, alt: '', loading: 'lazy' })
       : h('div.recent-thumb.placeholder', {}, item.format.toUpperCase());
-    const meta = [`${item.pages}쪽`, sizeLabel(item.size), relativeTime(item.openedAt)].join(' · ');
+    const meta = [item.pages > 0 ? `${item.pages}쪽` : null, sizeLabel(item.size), relativeTime(item.openedAt)].filter(Boolean).join(' · ');
     return h(
       'div.recent-item',
       { role: 'listitem' },
@@ -110,7 +158,13 @@ export class HomeScreen {
           'span.recent-text',
           {},
           h('span.recent-name', {}, item.name),
-          h('span.recent-meta', {}, meta, item.edited ? h('span.badge', {}, '편집됨') : null),
+          h(
+            'span.recent-meta',
+            {},
+            meta,
+            item.edited ? h('span.badge', {}, '편집됨') : null,
+            needsBackup(item) ? h('span.badge.warn', { title: '편집한 내용이 이 기기에만 있어요' }, '백업 전') : null,
+          ),
         ),
       ),
       h('button.icon-btn', { 'aria-label': `${item.name} 더보기`, onclick: () => this.more(item) }, icon('more')),
@@ -160,5 +214,21 @@ export class HomeScreen {
       const file = e.dataTransfer?.files[0];
       if (file) this.onDropFile?.(file);
     });
+  }
+}
+
+function dismissed(key: string): boolean {
+  try {
+    return localStorage.getItem(`dismissed:${key}`) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function dismiss(key: string): void {
+  try {
+    localStorage.setItem(`dismissed:${key}`, '1');
+  } catch {
+    // 저장소를 못 쓰면 다음에 다시 보여 준다.
   }
 }

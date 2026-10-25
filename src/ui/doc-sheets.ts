@@ -10,9 +10,10 @@ import { icon } from './icons';
 import { Sheet } from './sheet';
 import { toast } from './toast';
 
-async function deliver(name: string, bytes: Uint8Array, mime: string): Promise<void> {
+async function deliver(name: string, bytes: Uint8Array, mime: string): Promise<boolean> {
   const result = await shareFile(name, bytes, mime);
   if (result === 'downloaded') toast(`${name} 파일을 내려받았어요.`);
+  return result !== 'cancelled';
 }
 
 async function sendDocument(session: DocumentSession, format: DocFormat, password?: string): Promise<void> {
@@ -25,7 +26,7 @@ async function sendDocument(session: DocumentSession, format: DocFormat, passwor
     });
     if (!ok) return;
   }
-  await deliver(`${baseName(session.name)}.${format}`, bytes, MIME[format]);
+  if (await deliver(`${baseName(session.name)}.${format}`, bytes, MIME[format])) await session.markExported();
 }
 
 /** 보내기(공유)·내보내기 선택지 */
