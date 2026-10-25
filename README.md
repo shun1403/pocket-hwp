@@ -60,7 +60,8 @@ pnpm install
 pnpm dev          # 같은 Wi-Fi의 휴대폰 브라우저에서 http://<컴퓨터 IP>:5173 접속
 ```
 
-`main` 브랜치에 올라가면 GitHub Pages로 웹 버전이 배포됩니다(저장소 설정에서 Pages 소스를 “GitHub Actions”로 켜 주세요).
+웹 배포(GitHub Pages)는 지금 보류 중입니다. 쓰려면 저장소 설정에서 Pages 소스를 “GitHub Actions”로 켠 뒤
+Actions 탭에서 “웹 버전 배포” 워크플로를 직접 실행하세요(무료 요금제는 Public 저장소만 가능).
 
 ### 안드로이드
 
