@@ -19,7 +19,9 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # 보안 패치가 나온 최신 22.x를 쓴다 (러너에 캐시된 옛 버전을 쓰지 않도록)
+          node-version-file: .node-version
+          check-latest: true
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
@@ -37,7 +39,9 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # 보안 패치가 나온 최신 22.x를 쓴다 (러너에 캐시된 옛 버전을 쓰지 않도록)
+          node-version-file: .node-version
+          check-latest: true
           cache: pnpm
       - uses: actions/setup-java@v4
         with:
@@ -63,7 +67,9 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # 보안 패치가 나온 최신 22.x를 쓴다 (러너에 캐시된 옛 버전을 쓰지 않도록)
+          node-version-file: .node-version
+          check-latest: true
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
