@@ -8,12 +8,14 @@ export interface IncomingFile {
   bytes: Uint8Array;
 }
 
-/** 시스템 파일 선택기를 연다. 안드로이드/iOS WebView에서도 같은 방식으로 동작한다. */
-export function pickFile(accept: string): Promise<File | null> {
+/** 시스템 파일 선택기를 연다. 안드로이드/iOS WebView에서도 같은 방식으로 동작한다. capture면 카메라로 찍는다. */
+export function pickFile(accept: string, capture = false): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = accept;
+    // 휴대폰에서 바로 카메라를 연다.
+    if (capture) input.setAttribute('capture', 'environment');
     input.style.display = 'none';
     input.addEventListener('change', () => {
       resolve(input.files?.[0] ?? null);

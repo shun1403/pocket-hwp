@@ -39,12 +39,14 @@ pnpm dlx @capacitor/assets generate --iconBackgroundColor '#2f5ee8' --splashBack
 src/
   engine/      rhwp WASM 초기화, 번들 글꼴 등록
   doc/         문서 모델: 위치(DocPos), 본문/표 셀을 가리는 편집 API, 실행 취소, 입력 해석
+  doc/ops/     한글 기능 묶음: 표, 스타일·번호, 쪽 설정, 입력(각주·수식·링크 등), 개체(그림·수식·글상자)
   view/        연속 스크롤 쪽 뷰(지연 캔버스 렌더링·확대), 터치 제스처
   editor/      편집기: 캐럿·선택·IME 입력 브리지·오버레이
   export/      HWP/HWPX 직렬화, 이미지 PDF, 평문
   platform/    파일 열기·공유(웹/Capacitor), 앱 보관함(IndexedDB), 클립보드
   app/         문서 세션(자동 저장), 뒤로 가기 스택
-  ui/          홈·문서 화면, 서식 도구 줄, 바텀 시트, 읽기 모드
+  ui/          홈·문서 화면, 빠른 도구 줄, 바텀 시트, 읽기 모드
+  ui/panel/    키보드 자리에 올라오는 도구 패널과 탭(글자·문단·스타일·입력·표·쪽·보기)
 android/       Capacitor 안드로이드 프로젝트 (MainActivity: 받은 문서 처리)
 ios/           Capacitor iOS 프로젝트 (Info.plist: HWP/HWPX 문서 형식 등록)
 public/        글꼴(OFL), 아이콘, PWA manifest, 서비스 워커
@@ -79,6 +81,17 @@ tests/e2e      모바일 에뮬레이션 E2E
 비워서 메모리를 돌려줍니다(iOS WebView 캔버스 메모리 한도 대응). 편집 중에는 반응성을 위해 렌더링 배율을
 devicePixelRatio 2로 제한하고, 같은 프레임의 여러 입력을 한 번에 그립니다.
 
+### 편집 UI
+
+편집 모드의 아래쪽은 두 층입니다. 키보드 바로 위의 **빠른 도구 줄**(`QuickBar`)은 자주 쓰는 것만 두고,
+`서식`/`입력`/`표`를 누르면 키보드를 내리고 그 자리에 **도구 패널**(`ToolPanel`)을 올립니다.
+문서를 탭하면 입력칸에 포커스가 가면서 패널이 닫히고 키보드가 돌아옵니다. 패널에서 고르는 모든 편집은
+`Editor.command()`를 거쳐 실행 취소·다시 그리기·자동 저장이 함께 일어납니다. 새 기능은 `doc/ops/`에
+엔진 호출을 두고, `ui/panel/tabs/`에 버튼을 붙이면 됩니다.
+
+rhwp의 글자 위치(charOffset)에는 개체(각주·수식·그림 등)가 자리를 차지하지 않습니다. 개체를 넣은 뒤
+캐럿을 한 칸 옮기는 식의 계산을 하지 마세요.
+
 ### 실행 취소
 
 rhwp 스냅샷(`saveSnapshot`/`restoreSnapshot`)을 씁니다. 연속 타이핑은 한 단계로 묶고, 버려진 스냅샷은
@@ -100,8 +113,7 @@ Capacitor는 뒤로 버튼 리스너가 없으면 WebView `history.back()`을 �
 
 ## 앞으로 할 일
 
-- 표 줄/칸 추가·삭제, 셀 합치기 UI
-- 그림 크기 조절, 글상자·머리말/꼬리말 편집
+- 여러 셀을 끌어 선택해 합치기, 표 크기·테두리 편집
+- 각주·머리말/꼬리말을 본문처럼 직접 고치기, 꼬리말 쪽 번호
 - 원본 위치에 다시 저장(안드로이드 SAF `ACTION_OPEN_DOCUMENT` 쓰기 권한, iOS 문서 브라우저)
-- 글꼴 선택 시트, 문단 번호/글머리표
 - 큰 문서에서 Web Worker로 엔진 옮기기

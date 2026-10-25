@@ -3,6 +3,7 @@ import { HwpDocument, initEngine } from '../engine/rhwp';
 import { exportDocument, renderThumbnail } from '../export/exporters';
 import { type DocFormat, baseName, detectFormat } from '../platform/bytes';
 import { type LibraryEntry, library, newId } from '../platform/library';
+import { buildSample } from './sample';
 
 const AUTOSAVE_DELAY_MS = 1500;
 
@@ -22,6 +23,8 @@ export class DocumentSession {
   private constructor(
     readonly doc: EditableDocument,
     private entry: Omit<LibraryEntry, 'bytes'>,
+    /** 암호 문서면 보관본도 같은 암호로 저장한다 (메모리에만 둔다) */
+    private readonly password?: string,
   ) {}
 
   get id(): string {
@@ -40,12 +43,18 @@ export class DocumentSession {
     return this.entry.edited;
   }
 
-  static async open(name: string, bytes: Uint8Array, id?: string): Promise<DocumentSession> {
+  get protected(): boolean {
+    return !!this.password;
+  }
+
+  static async open(name: string, bytes: Uint8Array, id?: string, password?: string): Promise<DocumentSession> {
     await initEngine();
-    const raw = new HwpDocument(bytes);
+    const raw = password ? HwpDocument.openWithPassword(bytes, password) : new HwpDocument(bytes);
     const now = Date.now();
     const existing = id ? await library.get(id) : undefined;
-    const session = new DocumentSession(new EditableDocument(raw), {
+    const session = new DocumentSession(
+      new EditableDocument(raw),
+      {
       id: id ?? newId(),
       name,
       format: existing?.format ?? detectFormat(name, bytes),
@@ -55,16 +64,19 @@ export class DocumentSession {
       updatedAt: existing?.updatedAt ?? now,
       edited: existing?.edited ?? false,
       thumbnail: existing?.thumbnail,
-    });
-    if (!session.entry.thumbnail) session.entry.thumbnail = renderThumbnail(raw);
+      },
+      password,
+    );
+    // 암호 문서의 첫 쪽 그림을 목록에 남기지 않는다.
+    if (!session.entry.thumbnail && !password) session.entry.thumbnail = renderThumbnail(raw);
     await library.put({ ...session.entry, bytes });
     return session;
   }
 
-  static async openEntry(id: string): Promise<DocumentSession | null> {
+  static async openEntry(id: string, password?: string): Promise<DocumentSession | null> {
     const entry = await library.get(id);
     if (!entry) return null;
-    return DocumentSession.open(entry.name, entry.bytes, entry.id);
+    return DocumentSession.open(entry.name, entry.bytes, entry.id, password);
   }
 
   static async createBlank(): Promise<DocumentSession> {
@@ -75,6 +87,17 @@ export class DocumentSession {
     raw.free();
     const stamp = new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
     return DocumentSession.open(`새 문서 ${stamp}.hwp`, bytes);
+  }
+
+  /** 처음 쓰는 사람을 위한 안내 문서 */
+  static async createSample(): Promise<DocumentSession> {
+    await initEngine();
+    const raw = HwpDocument.createEmpty();
+    raw.createBlankDocument();
+    buildSample(new EditableDocument(raw));
+    const bytes = raw.exportHwp();
+    raw.free();
+    return DocumentSession.open('Pocket HWP 사용 안내.hwp', bytes);
   }
 
   /** 편집이 일어날 때마다 호출: 잠시 뒤 보관함에 저장한다. */
@@ -92,7 +115,7 @@ export class DocumentSession {
     this.saving = (async () => {
       this.dirty = false;
       // 보관본은 rhwp가 가장 안정적으로 다루는 HWP 5.0으로 둔다.
-      const { bytes } = exportDocument(this.doc.raw, 'hwp');
+      const { bytes } = exportDocument(this.doc.raw, 'hwp', this.password);
       this.entry = {
         ...this.entry,
         format: 'hwp',
@@ -101,7 +124,7 @@ export class DocumentSession {
         pages: this.doc.pageCount(),
         updatedAt: Date.now(),
         edited: true,
-        thumbnail: renderThumbnail(this.doc.raw) ?? this.entry.thumbnail,
+        thumbnail: this.password ? undefined : (renderThumbnail(this.doc.raw) ?? this.entry.thumbnail),
       };
       await library.put({ ...this.entry, bytes });
       this.onSaved?.();

@@ -4,7 +4,7 @@ import { documentText, exportDocument, exportPdf } from '../export/exporters';
 import { MIME, type DocFormat, baseName } from '../platform/bytes';
 import { isNative, shareFile } from '../platform/files';
 import type { PageView } from '../view/page-view';
-import { askConfirm } from './dialog';
+import { askConfirm, askText } from './dialog';
 import { h } from './dom';
 import { icon } from './icons';
 import { Sheet } from './sheet';
@@ -15,8 +15,8 @@ async function deliver(name: string, bytes: Uint8Array, mime: string): Promise<v
   if (result === 'downloaded') toast(`${name} 파일을 내려받았어요.`);
 }
 
-async function sendDocument(session: DocumentSession, format: DocFormat): Promise<void> {
-  const { bytes, lossWarnings } = exportDocument(session.doc.raw, format);
+async function sendDocument(session: DocumentSession, format: DocFormat, password?: string): Promise<void> {
+  const { bytes, lossWarnings } = exportDocument(session.doc.raw, format, password);
   if (lossWarnings.length > 0) {
     const ok = await askConfirm({
       title: '일부 내용이 빠질 수 있어요',
@@ -56,6 +56,13 @@ export function openExportSheet(session: DocumentSession): void {
   sheet.body.append(
     row('share', '한글 문서 (.hwp)', '한컴오피스·다른 앱에서 열 수 있어요', () => sendDocument(session, 'hwp')),
     row('share', 'HWPX 문서 (.hwpx)', '개방형 한글 형식 (실험적)', () => sendDocument(session, 'hwpx')),
+    row('lock', '암호 건 한글 문서 (.hwp)', '열 때 암호를 물어요', async () => {
+      const password = await askText('문서 암호', '', '암호 걸어 보내기', {
+        secret: true,
+        message: '받는 사람이 이 암호를 알아야 열 수 있어요. 암호는 앱에 저장하지 않아요.',
+      });
+      if (password) await sendDocument(session, 'hwp', password);
+    }),
     row('download', 'PDF', '쪽 모양 그대로 보내기', async () => {
       const progress = h('div.progress-toast', {}, 'PDF 만드는 중…');
       document.body.append(progress);

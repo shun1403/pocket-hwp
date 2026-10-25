@@ -1,7 +1,7 @@
 import type { CaretRect, PageRect } from '../doc/position';
 import type { PageView } from '../view/page-view';
 
-export type HandleSide = 'start' | 'end';
+export type HandleSide = 'start' | 'end' | 'caret';
 
 /**
  * 캐럿·선택 영역·선택 손잡이·조합 중 글자를 페이지 위에 그린다.
@@ -13,13 +13,16 @@ export class Overlay {
   private readonly handles: Record<HandleSide, HTMLDivElement> = {
     start: document.createElement('div'),
     end: document.createElement('div'),
+    caret: document.createElement('div'),
   };
+  private readonly objectBox = document.createElement('div');
   private selection: HTMLDivElement[] = [];
 
   constructor(private readonly view: PageView) {
     this.caret.className = 'caret';
     this.preview.className = 'composition';
-    for (const side of ['start', 'end'] as const) {
+    this.objectBox.className = 'object-box';
+    for (const side of ['start', 'end', 'caret'] as const) {
       const h = this.handles[side];
       h.className = `sel-handle sel-handle-${side}`;
       h.dataset.handle = side;
@@ -30,11 +33,15 @@ export class Overlay {
     return this.handles[side];
   }
 
-  showCaret(rect: CaretRect | null, blink = true): void {
+  showCaret(rect: CaretRect | null, blink = true, handle = false): void {
     if (!rect || !this.place(this.caret, rect.pageIndex, rect.x, rect.y, 0, rect.height)) {
       this.caret.remove();
+      this.handles.caret.remove();
       return;
     }
+    // 손잡이: 끌어서 캐럿을 정확히 옮긴다.
+    if (handle) this.place(this.handles.caret, rect.pageIndex, rect.x, rect.y + rect.height, 0, 0);
+    else this.handles.caret.remove();
     // 깜빡임 애니메이션을 처음부터 다시 시작해 이동 직후엔 항상 보이게 한다.
     this.caret.classList.remove('blink');
     if (blink) {
@@ -77,10 +84,21 @@ export class Overlay {
     this.handles.end.remove();
   }
 
+  /** 선택한 개체(그림·수식·글상자) 테두리 */
+  showObject(o: { page: number; x: number; y: number; w: number; h: number } | null): void {
+    if (!o) {
+      this.objectBox.remove();
+      return;
+    }
+    this.place(this.objectBox, o.page, o.x, o.y, o.w, o.h);
+  }
+
   clear(): void {
     this.clearSelection();
     this.caret.remove();
+    this.handles.caret.remove();
     this.preview.remove();
+    this.objectBox.remove();
   }
 
   private place(el: HTMLElement, page: number, x: number, y: number, w: number, h: number): boolean {

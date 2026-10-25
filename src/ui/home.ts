@@ -7,6 +7,7 @@ import { Sheet } from './sheet';
 export interface HomeActions {
   openFile(): void;
   newDocument(): void;
+  openSample(): void;
   openEntry(id: string): void;
   shareEntry(id: string): void;
   about(): void;
@@ -85,6 +86,7 @@ export class HomeScreen {
           h('div.empty-art', { 'aria-hidden': 'true' }, '📄'),
           h('p', {}, '아직 연 문서가 없어요.'),
           h('p.muted', {}, '메일·메신저로 받은 한글 파일을 열거나, 다른 앱에서 “Pocket HWP로 열기”를 선택하세요.'),
+          h('button.sample-btn', { onclick: () => this.actions.openSample() }, icon('sparkles', 20), '샘플 문서로 둘러보기'),
         ),
       );
       return;

@@ -28,9 +28,15 @@ export function readLoss(json: string): string[] {
   }
 }
 
-/** 문서를 HWP 또는 HWPX 바이트로 직렬화한다. */
-export function exportDocument(doc: HwpDocument, format: DocFormat): ExportResult {
-  const result = format === 'hwpx' ? doc.exportHwpxWithReport() : doc.exportHwpWithReport();
+/** 문서를 HWP 또는 HWPX 바이트로 직렬화한다. password 를 주면 암호를 건다. */
+export function exportDocument(doc: HwpDocument, format: DocFormat, password?: string): ExportResult {
+  const result = password
+    ? format === 'hwpx'
+      ? doc.exportHwpxWithPasswordAndReport(password)
+      : doc.exportHwpWithPasswordAndReport(password)
+    : format === 'hwpx'
+      ? doc.exportHwpxWithReport()
+      : doc.exportHwpWithReport();
   try {
     const lossWarnings = readLoss(result.contentLoss());
     return { bytes: result.takeBytes(), lossWarnings };

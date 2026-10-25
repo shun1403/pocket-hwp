@@ -125,7 +125,6 @@ input:focus-visible {
 }
 
 .icon-btn:active,
-.tool:active,
 .sheet-row:active {
   background: var(--surface-2);
 }
@@ -323,6 +322,19 @@ input:focus-visible {
   font-size: 14px;
 }
 
+.sample-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  margin-top: 16px;
+  padding: 0 18px;
+  border-radius: 22px;
+  background: var(--brand-weak);
+  color: var(--brand);
+  font-weight: 700;
+}
+
 .empty-art {
   font-size: 40px;
 }
@@ -413,7 +425,11 @@ input:focus-visible {
 }
 
 .doc.editing .page-scroller {
-  padding-bottom: calc(var(--kb) + 64px + var(--safe-bottom));
+  bottom: calc(var(--kb) + 56px);
+}
+
+.doc.editing.panel-open .page-scroller {
+  bottom: calc(var(--kb) + 56px + min(46dvh, 400px));
 }
 
 .page-inner {
@@ -512,6 +528,22 @@ input:focus-visible {
   inset: -14px;
 }
 
+.object-box {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  background: rgb(47 94 232 / 0.08);
+  border-radius: 2px;
+}
+
+.sel-handle-caret {
+  margin-left: -11px;
+}
+
+.sel-handle-caret::after {
+  border-radius: 0 50% 50% 50%;
+  transform: rotate(45deg);
+}
+
 .composition {
   display: flex;
   align-items: flex-end;
@@ -548,7 +580,7 @@ input:focus-visible {
 .page-pill {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + 36px);
+  bottom: calc(var(--safe-bottom) + 80px);
   transform: translateX(-50%);
   padding: 4px 12px;
   border-radius: 999px;
@@ -570,30 +602,72 @@ input:focus-visible {
   display: none;
 }
 
-.fab {
+.view-bar {
   position: absolute;
-  right: calc(var(--safe-right) + 20px);
-  bottom: calc(var(--safe-bottom) + 24px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px calc(var(--safe-right) + 10px) calc(var(--safe-bottom) + 6px) calc(var(--safe-left) + 6px);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  z-index: 6;
+  transition: transform 0.2s ease;
+}
+
+.vb {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.vb .icon {
+  color: var(--text);
+}
+
+.vb:active {
+  background: var(--surface-2);
+}
+
+.edit-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 56px;
-  padding: 0 22px 0 18px;
-  border-radius: 28px;
+  gap: 6px;
+  height: 48px;
+  padding: 0 20px 0 16px;
+  margin-left: 6px;
+  border-radius: 24px;
   background: var(--brand);
   color: #fff;
   font-weight: 700;
   font-size: 16px;
-  box-shadow: var(--shadow);
-  z-index: 6;
-  transition: transform 0.2s ease, opacity 0.2s;
+  flex: none;
 }
 
-.doc.editing .fab,
-.doc.immersive .fab {
-  transform: translateY(140%);
-  opacity: 0;
-  pointer-events: none;
+.doc.editing .view-bar {
+  display: none;
+}
+
+.doc.immersive .view-bar {
+  transform: translateY(110%);
+}
+
+.doc:not(.editing) .page-scroller {
+  bottom: calc(var(--safe-bottom) + 64px);
+}
+
+.doc.immersive .page-scroller {
+  bottom: 0;
 }
 
 .selection-menu {
@@ -625,28 +699,58 @@ input:focus-visible {
   background: rgb(255 255 255 / 0.12);
 }
 
-/* 키보드 위 편집 도구 */
-.format-toolbar {
+/* ───────── 편집 도구: 빠른 줄 + 도구 패널 ───────── */
+.edit-dock {
   position: fixed;
   left: 0;
   right: 0;
   bottom: var(--kb);
   display: none;
-  background: var(--surface);
-  border-top: 1px solid var(--line);
-  padding: 4px calc(var(--safe-right) + 4px) 4px calc(var(--safe-left) + 4px);
+  flex-direction: column;
   z-index: 20;
+  background: var(--surface);
+  box-shadow: 0 -1px 0 var(--line);
 }
 
-:root:not(.kb-open) .format-toolbar {
-  padding-bottom: calc(var(--safe-bottom) + 4px);
+.doc.editing .edit-dock {
+  display: flex;
 }
 
-.doc.editing .format-toolbar {
-  display: block;
+:root:not(.kb-open) .doc:not(.panel-open) .edit-dock {
+  padding-bottom: var(--safe-bottom);
 }
 
-.tool-scroll {
+/*
+ * 키보드 높이를 알 수 없는 곳(앱 안 미리보기 창 등): 도구 줄을 제목 바로 아래로 옮기고,
+ * 키보드가 덮을 아래쪽을 비워 둔다.
+ */
+.doc.dock-top .edit-dock {
+  position: relative;
+  bottom: auto;
+  order: 1;
+  padding-bottom: 0 !important;
+  box-shadow: 0 1px 0 var(--line);
+}
+
+.doc.dock-top .doc-body {
+  order: 2;
+}
+
+.doc.dock-top.editing .page-scroller {
+  bottom: 45vh;
+}
+
+.quick-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 56px;
+  padding: 0 calc(var(--safe-right) + 4px) 0 calc(var(--safe-left) + 4px);
+}
+
+.qb-scroll {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -654,44 +758,407 @@ input:focus-visible {
   scrollbar-width: none;
 }
 
-.tool-scroll::-webkit-scrollbar {
+.qb-scroll::-webkit-scrollbar {
   display: none;
 }
 
-.tool {
+.qb {
   display: inline-grid;
   place-items: center;
   min-width: 44px;
   height: 44px;
+  padding: 0 4px;
   border-radius: 10px;
   font-size: 18px;
   flex: none;
 }
 
-.tool.on {
+.qb:active {
+  background: var(--surface-2);
+}
+
+.qb.on {
   background: var(--brand-weak);
   color: var(--brand);
 }
 
-.tool-sep {
-  width: 1px;
-  height: 24px;
-  background: var(--line);
-  margin: 0 4px;
-  flex: none;
+.qb-labeled {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 48px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.1;
 }
 
-.size-label {
-  min-width: 28px;
+.qb-glyph {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+}
+
+.qb-size {
+  min-width: 26px;
   text-align: center;
   font-size: 14px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  flex: none;
 }
 
-.aa {
+.qb-sep {
+  width: 1px;
+  height: 24px;
+  margin: 0 3px;
+  background: var(--line);
+  flex: none;
+}
+
+.qb-kb {
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  margin-left: 2px;
+}
+
+.qb-kb.show-kb {
+  color: var(--brand);
+}
+
+.tool-panel {
+  display: none;
+  flex-direction: column;
+  height: min(46dvh, 400px);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.tool-panel.open {
+  display: flex;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-tabs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 6px calc(var(--safe-left) + 8px);
+}
+
+.panel-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.panel-tab {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+  flex: none;
+}
+
+.panel-tab.on {
+  background: var(--brand);
+  color: #fff;
+}
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px calc(var(--safe-right) + 12px) calc(var(--safe-bottom) + 16px) calc(var(--safe-left) + 12px);
+}
+
+.tab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 8px;
+}
+
+.panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.panel-label {
+  margin: 0;
+  font-size: 13px;
   font-weight: 700;
+  color: var(--text-2);
+}
+
+.panel-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.btn-row {
+  display: flex;
+  gap: 6px;
+}
+
+.seg {
+  flex: 1;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 6px;
+  border-radius: 12px;
+  background: var(--surface-2);
   font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.seg.on,
+.chip-btn.on,
+.font-btn.on,
+.style-btn.on,
+.tile.on {
+  background: var(--brand-weak);
+  color: var(--brand);
+  box-shadow: inset 0 0 0 2px var(--brand);
+}
+
+.seg sup,
+.seg sub {
+  font-size: 10px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip-btn {
+  min-width: 48px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 20px;
+  background: var(--surface-2);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stepper-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+}
+
+.stepper-label {
+  flex: 1;
+  font-size: 15px;
+}
+
+.stepper-value {
+  min-width: 72px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.round {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--surface-2);
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 76px;
+  padding: 8px 4px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.tile .icon {
+  color: var(--brand);
+}
+
+.tile.danger .icon {
+  color: var(--danger);
+}
+
+.tile-label {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+  word-break: keep-all;
+}
+
+.font-list,
+.style-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
+}
+
+.font-btn,
+.style-btn {
+  min-height: 48px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  text-align: left;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.style-h1 {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.style-h2 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.style-h3 {
+  font-weight: 700;
+}
+
+.style-small {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.panel-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.wide-btn {
+  flex: 1;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-weight: 700;
+}
+
+.wide-btn.danger {
+  color: var(--danger);
+}
+
+.swatch.none {
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+}
+
+.swatch-x {
+  width: 70%;
+  height: 2px;
+  background: var(--danger);
+  transform: rotate(-45deg);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats dt {
+  color: var(--text-2);
+}
+
+.stats dd {
+  margin: 0;
+  font-weight: 700;
+  text-align: right;
+}
+
+.table-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 3px;
+  margin: 0 8px 12px;
+}
+
+.grid-cell {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.grid-cell.on {
+  background: var(--brand-weak);
+  border-color: var(--brand);
+}
+
+.equation-preview {
+  display: grid;
+  place-items: center;
+  min-height: 88px;
+  margin: 0 8px 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.equation-preview img {
+  max-height: 72px;
+  max-width: 100%;
+}
+
+.equation-input {
+  width: calc(100% - 16px);
+  margin: 0 8px 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: 16px ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  resize: vertical;
+}
+
+.sheet-body > .chips {
+  margin: 0 8px 4px;
 }
 
 /* 찾기 */
@@ -748,6 +1215,11 @@ input:focus-visible {
   position: fixed;
   inset: 0;
   z-index: 100;
+}
+
+/* 닫히는 동안(사라지는 애니메이션)에는 탭을 가로채지 않는다 */
+.sheet:not(.open) {
+  pointer-events: none;
 }
 
 .sheet-backdrop {
@@ -901,27 +1373,8 @@ input:focus-visible {
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
 }
 
-.table-picker {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  padding: 0 8px;
-}
 
-.table-preview {
-  display: grid;
-  grid-template-columns: repeat(var(--cols), 1fr);
-  gap: 2px;
-  width: 120px;
-  flex: none;
-}
 
-.table-preview span {
-  aspect-ratio: 3 / 2;
-  background: var(--brand-weak);
-  border: 1px solid var(--brand);
-  border-radius: 2px;
-}
 
 .table-controls {
   display: flex;
@@ -935,16 +1388,7 @@ input:focus-visible {
   font-size: 18px;
 }
 
-.stepper {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
 
-.stepper > span {
-  width: 28px;
-  color: var(--text-2);
-}
 
 .primary-btn {
   display: flex;
