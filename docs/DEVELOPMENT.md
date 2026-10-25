@@ -33,6 +33,46 @@ node scripts/render-icons.mjs
 pnpm dlx @capacitor/assets generate --iconBackgroundColor '#2f5ee8' --splashBackgroundColor '#ffffff' --splashBackgroundColorDark '#121316'
 ```
 
+## 안드로이드 APK 릴리스
+
+`v`로 시작하는 태그를 올리면 `.github/workflows/release.yml`이 서명된 APK를 만들어 GitHub Releases에 올립니다.
+사용자는 휴대폰 브라우저로 Releases 페이지에서 바로 받아 설치합니다 (README의 설치 안내 참고).
+
+### 1. 서명 키 만들기 (처음 한 번)
+
+같은 키로 서명한 APK끼리만 업데이트가 됩니다. **키를 잃어버리면 기존 사용자는 지우고 다시 설치해야 하니**
+키 파일과 비밀번호를 안전한 곳(비밀번호 관리자 등)에 따로 보관하세요. 저장소에는 절대 올리지 않습니다.
+
+```sh
+keytool -genkeypair -v -keystore pocket-hwp-release.jks -alias pocket-hwp \
+  -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 pocket-hwp-release.jks > keystore.b64   # macOS: base64 -i pocket-hwp-release.jks -o keystore.b64
+```
+
+### 2. GitHub에 비밀 값 넣기
+
+저장소 **Settings → Secrets and variables → Actions → New repository secret**:
+
+| 이름 | 값 |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | `keystore.b64` 파일 내용 |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore 비밀번호 |
+| `ANDROID_KEY_ALIAS` | `pocket-hwp` (위에서 정한 alias) |
+| `ANDROID_KEY_PASSWORD` | 키 비밀번호 (따로 정하지 않았으면 keystore 비밀번호와 같음) |
+
+비밀 값이 없으면 워크플로는 임시 키로 서명하고 경고를 남깁니다. 그 APK는 설치는 되지만 다음 버전으로 업데이트되지 않습니다.
+
+### 3. 릴리스 올리기
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+몇 분 뒤 Releases에 `PocketHWP-0.2.0.apk`가 올라갑니다. 앱 버전 이름은 태그에서, 버전 코드는 워크플로 실행 번호에서
+가져오므로 새 릴리스가 항상 이전 릴리스보다 높은 버전 코드를 가집니다. Actions 탭에서 **안드로이드 APK 릴리스**를
+직접 실행하면 릴리스 없이 APK만 결과물로 받을 수 있습니다 (시험용).
+
 ## 구조
 
 ```text

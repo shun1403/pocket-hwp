@@ -1,0 +1,91 @@
+name: 안드로이드 APK 릴리스
+
+# v로 시작하는 태그(예: v0.2.0)를 올리면 서명된 APK를 만들어 GitHub Releases에 올린다.
+# Actions 탭에서 직접 실행하면 릴리스 없이 APK만 결과물(artifact)로 남긴다.
+#
+# 서명 키(저장소 Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64  keystore 파일을 base64로 바꾼 값
+#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+# 키가 없으면 임시 키로 서명한다. 그 APK는 설치는 되지만 다음 버전으로 업데이트할 수 없다.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          check-latest: true
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm exec cap sync android
+
+      - name: 버전 정하기
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "name=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=0.0.0-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: APK 빌드 (release)
+        working-directory: android
+        env:
+          POCKET_VERSION_NAME: ${{ steps.ver.outputs.name }}
+          POCKET_VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: 정렬·서명
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION: ${{ steps.ver.outputs.name }}
+        run: |
+          set -euo pipefail
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          OUT="PocketHWP-${VERSION}.apk"
+          "$BT/zipalign" -p -f 4 "$UNSIGNED" aligned.apk
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > release.jks
+            "$BT/apksigner" sign --ks release.jks --ks-pass env:KEYSTORE_PASSWORD \
+              --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASSWORD --out "$OUT" aligned.apk
+            rm -f release.jks
+          else
+            echo "::warning::서명 키가 없어 임시 키로 서명합니다. 이 APK는 다음 버전으로 업데이트할 수 없습니다."
+            keytool -genkeypair -keystore temp.jks -storepass temppass -keypass temppass -alias temp \
+              -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=Pocket HWP temporary key"
+            "$BT/apksigner" sign --ks temp.jks --ks-pass pass:temppass --out "$OUT" aligned.apk
+            rm -f temp.jks
+          fi
+          "$BT/apksigner" verify --print-certs "$OUT"
+          echo "APK=$OUT" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocket-hwp-apk
+          path: ${{ env.APK }}
+
+      - name: GitHub Releases에 올리기
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.APK }}
+          generate_release_notes: true
