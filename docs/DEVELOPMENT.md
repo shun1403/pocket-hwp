@@ -2,7 +2,7 @@
 
 ## 준비
 
-- Node.js 20.19 이상, pnpm 10 (`corepack enable`)
+- Node.js 22.23.4 이상 (2026년 10월 보안 패치 포함, `.node-version` 참고), pnpm 10 (`corepack enable`)
 - 안드로이드: Android Studio 또는 Android SDK(compileSdk 36) + JDK 21
 - iOS: macOS + Xcode 16 이상
 
