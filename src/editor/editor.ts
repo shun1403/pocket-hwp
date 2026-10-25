@@ -4,6 +4,7 @@ import type { InputAction } from '../doc/input-diff';
 import {
   type CaretRect,
   type DocPos,
+  type PageRect,
   innerPara,
   orderRange,
   sameContainer,
@@ -350,6 +351,7 @@ export class Editor {
       this.overlay.showCaret(editing ? rect : null, true, editing && this.caretHandle);
     }
     this.overlay.showObject(this.object);
+    this.overlay.drawHighlight();
     if (rect) {
       if (reveal) this.view.reveal(rect.pageIndex, rect.x, rect.y, rect.height);
       this.syncInputPosition(rect);
@@ -604,6 +606,11 @@ export class Editor {
       this.paint(false);
     }
     return ok;
+  }
+
+  /** 표 칸 범위 같은 강조 영역 (null 이면 지운다) */
+  highlight(rects: PageRect[] | null): void {
+    this.overlay.setHighlight(rects ?? []);
   }
 
   /** 문서 표시 방식만 바꿨을 때 (조판 부호 보기 등) */

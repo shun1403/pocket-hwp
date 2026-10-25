@@ -10,12 +10,18 @@ export interface PanelContext {
   openReader(): void;
   openPages(): void;
   openInfo(): void;
+  /** 다른 도구 탭으로 바꾼다 */
+  openTab(id: string): void;
+  /** 서식 채우기 (빈칸 차례로 채우기) */
+  openFormFill(): void;
 }
 
 export interface TabView {
   el: HTMLElement;
   /** 캐럿이 움직이거나 서식이 바뀌면 불린다 */
   refresh(): void;
+  /** 다른 탭으로 바꾸거나 패널을 닫을 때 (강조 표시 지우기 등) */
+  dispose?(): void;
 }
 
 export interface TabDef {

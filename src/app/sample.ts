@@ -35,6 +35,7 @@ export function buildSample(doc: EditableDocument): void {
     '키보드 위 [서식]으로 글자·문단·스타일·쪽 모양을 바꿔요.',
     '[입력]으로 표·사진·수식·각주·링크를 넣어요.',
     '길게 누르면 낱말이 선택되고, 손잡이로 범위를 조절해요.',
+    '[입력 → 서식 채우기]로 양식의 빈칸을 차례로 채워요.',
   ];
   steps.forEach((text, i) => {
     styleLast(line(text), { bold: false, fontSize: 1100 });
@@ -58,6 +59,21 @@ export function buildSample(doc: EditableDocument): void {
     pos = { ...pos, offset: doc.raw.getParagraphLength(0, pos.para) };
     enter();
   }
+  styleLast(line('□ 서식 채우기 연습'), { bold: true, fontSize: 1300 });
+  enter();
+  // 한글 누름틀(빨간 안내문이 보이는 빈칸). 줄을 다 만든 뒤 각 줄 끝에 넣는다
+  // (누름틀 뒤에서 줄을 나누면 누름틀이 다음 줄로 넘어간다).
+  const fields: [DocPos, string, string][] = [];
+  for (const [label, guide, name] of [
+    ['성명: ', '이름을 쓰세요', '성명'],
+    ['연락처: ', '전화번호를 쓰세요', '연락처'],
+  ]) {
+    styleLast(line(label), { bold: false, fontSize: 1100 });
+    fields.push([pos, guide, name]);
+    enter();
+  }
+  for (const [at, guide, name] of fields) doc.raw.insertClickHereField(at.sec, at.para, at.offset, guide, '', name, true);
+  enter();
   styleLast(line('□ 수식'), { bold: true, fontSize: 1300 });
   enter();
   pos = insertEquation(doc, pos, 'x = {-b +- sqrt {b ^{2} - 4ac}} over {2a}', 12);

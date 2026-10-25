@@ -18,6 +18,7 @@
     "ios": "pnpm run cap:sync && cap open ios"
   },
   "dependencies": {
+    "@capacitor-community/text-to-speech": "8.0.2",
     "@capacitor/app": "^8.1.2",
     "@capacitor/clipboard": "^8.0.1",
     "@capacitor/core": "^8.5.3",

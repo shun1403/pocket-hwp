@@ -6,13 +6,14 @@ import { insertTab } from './tabs/insert';
 import { pageTab } from './tabs/page';
 import { paraTab } from './tabs/para';
 import { styleTab } from './tabs/style';
+import { symbolTab } from './tabs/symbol';
 import { tableTab } from './tabs/table';
 import { viewTab } from './tabs/view';
 
-export const TABS: TabDef[] = [charTab, paraTab, styleTab, insertTab, tableTab, pageTab, viewTab];
+export const TABS: TabDef[] = [charTab, paraTab, styleTab, insertTab, symbolTab, tableTab, pageTab, viewTab];
 
 /**
- * 키보드 자리에 올라오는 도구 패널 (한글 메뉴의 글자·문단·스타일·입력·표·쪽·보기).
+ * 키보드 자리에 올라오는 도구 패널 (한글 메뉴의 글자·문단·스타일·입력·기호·표·쪽·보기).
  * 서식을 여러 번 바꿀 동안 열려 있고, 키보드 버튼이나 문서를 탭하면 닫힌다.
  */
 export class ToolPanel {
@@ -53,6 +54,7 @@ export class ToolPanel {
     if (!tab) return;
     const wasOpen = this.isOpen;
     this.currentId = id;
+    this.view?.dispose?.();
     this.view = tab.build(this.ctx);
     this.body.replaceChildren(this.view.el);
     this.body.scrollTop = 0;
@@ -73,6 +75,7 @@ export class ToolPanel {
   close(): void {
     if (!this.isOpen) return;
     this.currentId = null;
+    this.view?.dispose?.();
     this.view = null;
     this.body.replaceChildren();
     this.el.classList.remove('open');

@@ -9,6 +9,8 @@ const server = await createServer({ server: { port: 5198, strictPort: true }, lo
 await server.listen();
 const browser = await chromium.launch();
 const context = await browser.newContext({ ...devices['Pixel 7'], locale: 'ko-KR', deviceScaleFactor: 2 });
+// 처음 편집할 때 뜨는 사용법 안내는 스크린샷에서 뺀다.
+await context.addInitScript(() => localStorage.setItem('tips:edit-seen', 'true'));
 const page = await context.newPage();
 const shot = async (name) => {
   await page.waitForTimeout(500);
@@ -43,6 +45,35 @@ await run(`
 `);
 await page.click('.panel-tab:has-text("표")');
 await shot('table');
+
+await page.click('.panel-tab:has-text("기호")');
+await shot('symbol');
+
+// 서명 넣기 시트: 손가락 서명을 흉내 낸다.
+await page.click('.panel-tab:has-text("입력")');
+await page.click('.tile[aria-label="서명·도장"]');
+await page.waitForSelector('.sheet.open .sign-canvas');
+await page.waitForTimeout(400);
+const pad = await page.locator('.sheet.open .sign-canvas').boundingBox();
+const cdp = await context.newCDPSession(page);
+const stroke = Array.from({ length: 24 }, (_, i) => ({
+  x: pad.x + pad.width * (0.15 + i * 0.03),
+  y: pad.y + pad.height * (0.5 + 0.18 * Math.sin(i * 0.9)),
+}));
+await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [stroke[0]] });
+for (const p of stroke.slice(1)) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [p] });
+await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+await shot('sign');
+await page.goBack();
+await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+
+// 서식 채우기: 샘플 문서의 누름틀을 채운다.
+await page.click('.panel-tab:has-text("입력")');
+await page.click('.tile[aria-label="서식 채우기"]');
+await page.waitForSelector('.form-fill:not([hidden])');
+await page.fill('.ff-input', '홍길동');
+await shot('fill');
+await page.click('.ff-done');
 
 await page.click('.done-btn');
 await page.click('[aria-label="읽기 모드"]');

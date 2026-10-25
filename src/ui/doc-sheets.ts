@@ -29,6 +29,25 @@ async function sendDocument(session: DocumentSession, format: DocFormat, passwor
   if (await deliver(`${baseName(session.name)}.${format}`, bytes, MIME[format])) await session.markExported();
 }
 
+/** 원래 파일 자리에 덮어쓴다. 성공하면 true */
+export async function saveToOriginal(session: DocumentSession): Promise<boolean> {
+  try {
+    const saved = await session.saveToSource((losses, format) =>
+      askConfirm({
+        title: '일부 내용이 바뀔 수 있어요',
+        message: `${format.toUpperCase()}로 저장하면 다음 내용이 빠지거나 바뀔 수 있어요.\n· ${losses.slice(0, 5).join('\n· ')}`,
+        confirmLabel: '그래도 저장',
+      }),
+    );
+    if (saved) toast(`원래 파일(${session.sourceName})에 저장했어요.`);
+    return saved;
+  } catch (err) {
+    console.error(err);
+    toast('원래 파일에 저장하지 못했어요. 파일이 옮겨졌거나 권한이 없을 수 있어요. 보내기로 저장해 주세요.', 5000);
+    return false;
+  }
+}
+
 /** 보내기(공유)·내보내기 선택지 */
 export function openExportSheet(session: DocumentSession): void {
   const sheet = new Sheet({ title: '보내기' });
@@ -52,6 +71,13 @@ export function openExportSheet(session: DocumentSession): void {
   if (import.meta.env.VITE_SANDBOXED) {
     sheet.body.append(
       h('p.sheet-note', {}, 'Claude 미리보기 안에서는 파일을 내보낼 수 없어요. 설치한 앱이나 웹 버전에서 보내기를 써 주세요.'),
+    );
+  }
+  if (session.sourceName) {
+    sheet.body.append(
+      row('download', '원래 파일에 저장', `${session.sourceName}에 고친 내용을 덮어써요`, async () => {
+        await saveToOriginal(session);
+      }),
     );
   }
   sheet.body.append(

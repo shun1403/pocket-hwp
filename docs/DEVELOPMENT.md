@@ -83,14 +83,14 @@ src/
   view/        연속 스크롤 쪽 뷰(지연 캔버스 렌더링·확대), 터치 제스처
   editor/      편집기: 캐럿·선택·IME 입력 브리지·오버레이
   export/      HWP/HWPX 직렬화, 이미지 PDF, 평문
-  platform/    파일 열기·공유(웹/Capacitor), 앱 보관함(IndexedDB), 클립보드
+  platform/    파일 열기·공유·원래 파일에 저장(웹/Capacitor), 보관함·버전·서명(IndexedDB), 음성, 클립보드
   app/         문서 세션(자동 저장), 뒤로 가기 스택
   ui/          홈·문서 화면, 빠른 도구 줄, 바텀 시트, 읽기 모드
-  ui/panel/    키보드 자리에 올라오는 도구 패널과 탭(글자·문단·스타일·입력·표·쪽·보기)
-android/       Capacitor 안드로이드 프로젝트 (MainActivity: 받은 문서 처리)
-ios/           Capacitor iOS 프로젝트 (Info.plist: HWP/HWPX 문서 형식 등록)
+  ui/panel/    키보드 자리에 올라오는 도구 패널과 탭(글자·문단·스타일·입력·기호·표·쪽·보기)
+android/       Capacitor 안드로이드 프로젝트 (MainActivity: 받은 문서 처리, DocumentFilesPlugin: 원래 파일에 저장)
+ios/           Capacitor iOS 프로젝트 (Info.plist: HWP/HWPX 문서 형식 등록, DocumentFilesPlugin: 원래 파일에 저장)
 public/        글꼴(OFL), 아이콘, PWA manifest, 서비스 워커
-tests/unit     순수 로직 단위 테스트
+tests/unit     순수 로직·엔진(Node에서 WASM) 단위 테스트
 tests/e2e      모바일 에뮬레이션 E2E
 ```
 
@@ -132,10 +132,36 @@ devicePixelRatio 2로 제한하고, 같은 프레임의 여러 입력을 한 번
 rhwp의 글자 위치(charOffset)에는 개체(각주·수식·그림 등)가 자리를 차지하지 않습니다. 개체를 넣은 뒤
 캐럿을 한 칸 옮기는 식의 계산을 하지 마세요.
 
+### 서식 채우기·쪽 번호
+
+- 서식 채우기(`doc/ops/fields.ts`, `ui/form-fill.ts`)는 엔진의 누름틀 목록(`getFieldList`)을 돌고, 값은 `setFieldValue`로 넣습니다.
+  누름틀 끝 위치에 글을 끼우면 누름틀 밖에 들어가므로, 캐럿 타이핑 대신 큰 입력칸 하나에 쓰고 넘어갈 때 넣습니다.
+  누름틀이 없으면 `getPageControlLayout`의 표 칸 중 빈 칸을 대신 돕니다.
+- 쪽 번호(`setPageNumber`)는 꼬리말 필드(`insertFieldInHf`, 1 = 현재 쪽, 2 = 전체 쪽)라서 쪽마다 알맞은 번호로 그려지고 저장해도 남습니다.
+
 ### 실행 취소
 
 rhwp 스냅샷(`saveSnapshot`/`restoreSnapshot`)을 씁니다. 연속 타이핑은 한 단계로 묶고, 버려진 스냅샷은
 `discardSnapshot`으로 해제합니다. 한도는 엔진의 `snapshotCapacity()`를 넘지 않습니다.
+
+### 버전 기록·서명
+
+IndexedDB(`platform/db.ts`, 버전 2)에는 문서(`documents`) 말고도 문서별 이전 버전(`versions`, `docId` 색인)과
+저장한 서명·도장(`signatures`)이 있습니다.
+
+- 처음 연 파일은 "처음 상태" 버전으로 남기고(지우지 않음), 편집 중에는 자동 저장이 10분 이상 벌어질 때와 문서를 닫을 때 버전을 남깁니다.
+  문서마다 자동 버전 20개를 넘으면 오래된 것부터 지웁니다. 되돌리기 직전 내용도 버전으로 남깁니다.
+- 암호 문서의 버전은 보관본과 같이 암호가 걸린 채 저장됩니다. 보관함 백업 ZIP에는 버전과 서명이 들어가지 않습니다.
+- 서명·도장 사진은 어두운 잉크·붉은 인주만 남기고 흰 바탕을 투명하게 바꾼 PNG(`removePaper`)로 넣습니다.
+
+### 원래 파일에 저장
+
+- 안드로이드: 앱 안 플러그인 `DocumentFilesPlugin.java`(MainActivity에서 등록)가 `ACTION_OPEN_DOCUMENT`로 열고
+  영구 읽기·쓰기 권한을 받아 둡니다. 쓰기는 영구 쓰기 권한이 있는 주소에만 합니다.
+- iOS: `DocumentFilesPlugin.swift`(`MainViewController`에서 등록)가 문서 선택기로 제자리에서 열고 보안 북마크를 보관합니다.
+- 웹: File System Access API(`showOpenFilePicker`) 파일 핸들을 IndexedDB에 둡니다. 크롬·엣지 컴퓨터 브라우저에서만 됩니다.
+- 보관함 항목의 `source`가 원래 파일 자리입니다. 사본에는 넘기지 않습니다(사본을 고쳐도 원본을 덮어쓰지 않게).
+- 받은 파일(VIEW/SEND 인텐트, iOS Inbox)은 원래 자리에 쓸 권한이 없어 공유 시트로만 저장합니다.
 
 ### 보관함과 데이터 보호
 
@@ -181,7 +207,6 @@ Capacitor는 뒤로 버튼 리스너가 없으면 WebView `history.back()`을 �
 
 ## 앞으로 할 일
 
-- 여러 셀을 끌어 선택해 합치기, 표 크기·테두리 편집
-- 각주·머리말/꼬리말을 본문처럼 직접 고치기, 꼬리말 쪽 번호
-- 원본 위치에 다시 저장(안드로이드 SAF `ACTION_OPEN_DOCUMENT` 쓰기 권한, iOS 문서 브라우저)
+- 표 크기·테두리 편집, 손가락으로 끌어서 여러 칸 고르기
+- 각주·머리말/꼬리말을 본문처럼 직접 고치기
 - 큰 문서에서 Web Worker로 엔진 옮기기

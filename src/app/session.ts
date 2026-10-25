@@ -2,10 +2,21 @@ import { EditableDocument } from '../doc/editable';
 import { HwpDocument, initEngine } from '../engine/rhwp';
 import { exportDocument, renderThumbnail } from '../export/exporters';
 import { type DocFormat, baseName, detectFormat } from '../platform/bytes';
+import { type FileSource, fileHandles, writeToSource } from '../platform/document-files';
 import { type LibraryEntry, library, newId } from '../platform/library';
+import { VERSION_INTERVAL_MS, type DocVersion, versions } from '../platform/versions';
 import { buildSample } from './sample';
 
 const AUTOSAVE_DELAY_MS = 1500;
+
+export interface OpenOptions {
+  id?: string;
+  password?: string;
+  keepOriginal?: boolean;
+  source?: FileSource;
+  /** 컴퓨터 브라우저에서 연 파일 핸들 (source.kind === 'web') */
+  handle?: FileSystemFileHandle;
+}
 
 /**
  * 열려 있는 문서 하나.
@@ -18,6 +29,11 @@ export class DocumentSession {
   private saveTimer = 0;
   private saving: Promise<void> | null = null;
   dirty = false;
+  /** 마지막 버전을 남긴 뒤 저장한 변경이 있다 */
+  private unversioned = false;
+  private lastVersionAt = 0;
+  /** 이번에 연 파일 핸들 (다시 열었으면 저장할 때 보관함에서 꺼낸다) */
+  private webHandle: FileSystemFileHandle | undefined;
   onSaved: (() => void) | null = null;
 
   private constructor(
@@ -47,7 +63,37 @@ export class DocumentSession {
     return !!this.password;
   }
 
-  static async open(name: string, bytes: Uint8Array, id?: string, password?: string): Promise<DocumentSession> {
+  /** 원래 파일 이름 (그 자리에 다시 저장할 수 있을 때만) */
+  get sourceName(): string | null {
+    return this.entry.source?.name ?? null;
+  }
+
+  /**
+   * 원래 파일 자리에 덮어쓴다. 형식은 원래 파일 확장자를 따르고, 암호 문서는 같은 암호로 저장한다.
+   * 저장 전에 빠질 수 있는 내용(lossWarnings)을 confirm 으로 묻는다.
+   */
+  async saveToSource(confirm: (lossWarnings: string[], format: DocFormat) => Promise<boolean>): Promise<boolean> {
+    const source = this.entry.source;
+    if (!source) return false;
+    const format: DocFormat = /\.hwpx$/i.test(source.name) ? 'hwpx' : 'hwp';
+    const { bytes, lossWarnings } = exportDocument(this.doc.raw, format, this.password);
+    if (lossWarnings.length > 0 && !(await confirm(lossWarnings, format))) return false;
+    const handle = source.kind === 'web' ? (this.webHandle ??= await fileHandles.get(this.entry.id)) : undefined;
+    const next = await writeToSource(source, bytes, handle);
+    this.entry = { ...this.entry, source: next };
+    const stored = await library.get(this.entry.id);
+    if (stored) await library.put({ ...stored, source: next });
+    await this.markExported();
+    return true;
+  }
+
+  /**
+   * - id: 보관함에 있는 문서를 다시 열 때
+   * - keepOriginal: 처음 연 파일을 "처음 상태" 버전으로 남긴다 (빈 새 문서는 남길 필요가 없다)
+   * - source: 원래 파일 자리 (거기에 다시 저장할 수 있다)
+   */
+  static async open(name: string, bytes: Uint8Array, opts: OpenOptions = {}): Promise<DocumentSession> {
+    const { id, password, keepOriginal = true } = opts;
     await initEngine();
     const raw = password ? HwpDocument.openWithPassword(bytes, password) : new HwpDocument(bytes);
     const now = Date.now();
@@ -65,19 +111,33 @@ export class DocumentSession {
         edited: existing?.edited ?? false,
         thumbnail: existing?.thumbnail,
         exportedAt: existing?.exportedAt,
+        pinned: existing?.pinned,
+        source: opts.source ?? existing?.source,
       },
       password,
     );
     // 암호 문서의 첫 쪽 그림을 목록에 남기지 않는다.
     if (!session.entry.thumbnail && !password) session.entry.thumbnail = renderThumbnail(raw);
     await library.put({ ...session.entry, bytes });
+    if (opts.handle) {
+      session.webHandle = opts.handle;
+      await fileHandles.put(session.id, opts.handle).catch(() => undefined);
+    }
+    try {
+      session.lastVersionAt = await versions.latestAt(session.id);
+      if (keepOriginal && !(await versions.hasOriginal(session.id))) {
+        await versions.add({ docId: session.id, at: now, name, format: session.entry.format, size: bytes.length, bytes, reason: 'original' });
+      }
+    } catch {
+      // 버전 기록은 보조 기능이라 실패해도 문서는 연다.
+    }
     return session;
   }
 
   static async openEntry(id: string, password?: string): Promise<DocumentSession | null> {
     const entry = await library.get(id);
     if (!entry) return null;
-    return DocumentSession.open(entry.name, entry.bytes, entry.id, password);
+    return DocumentSession.open(entry.name, entry.bytes, { id: entry.id, password });
   }
 
   static async createBlank(): Promise<DocumentSession> {
@@ -87,7 +147,7 @@ export class DocumentSession {
     const bytes = raw.exportHwp();
     raw.free();
     const stamp = new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
-    return DocumentSession.open(`새 문서 ${stamp}.hwp`, bytes);
+    return DocumentSession.open(`새 문서 ${stamp}.hwp`, bytes, { keepOriginal: false });
   }
 
   /** 처음 쓰는 사람을 위한 안내 문서 */
@@ -98,7 +158,7 @@ export class DocumentSession {
     buildSample(new EditableDocument(raw));
     const bytes = raw.exportHwp();
     raw.free();
-    return DocumentSession.open('Pocket HWP 사용 안내.hwp', bytes);
+    return DocumentSession.open('Pocket HWP 사용 안내.hwp', bytes, { keepOriginal: false });
   }
 
   /** 편집이 일어날 때마다 호출: 잠시 뒤 보관함에 저장한다. */
@@ -128,6 +188,8 @@ export class DocumentSession {
         thumbnail: this.password ? undefined : (renderThumbnail(this.doc.raw) ?? this.entry.thumbnail),
       };
       await library.put({ ...this.entry, bytes });
+      this.unversioned = true;
+      if (this.entry.updatedAt - this.lastVersionAt >= VERSION_INTERVAL_MS) await this.addVersion(bytes, 'auto');
       this.onSaved?.();
     })();
     try {
@@ -135,6 +197,24 @@ export class DocumentSession {
     } finally {
       this.saving = null;
     }
+  }
+
+  private async addVersion(bytes: Uint8Array, reason: DocVersion['reason']): Promise<void> {
+    try {
+      const at = Date.now();
+      await versions.add({ docId: this.entry.id, at, name: this.entry.name, format: this.entry.format, size: bytes.length, bytes, reason });
+      this.lastVersionAt = at;
+      this.unversioned = false;
+    } catch {
+      // 저장 공간이 모자라면 버전은 건너뛴다 (보관함 저장은 이미 끝났다).
+    }
+  }
+
+  /** 다른 버전으로 되돌리기 전에 지금 내용을 버전으로 남긴다. */
+  async keepCurrentVersion(): Promise<void> {
+    await this.save();
+    const stored = await library.get(this.entry.id);
+    if (stored) await this.addVersion(stored.bytes, 'restore');
   }
 
   /** HWP/HWPX 사본을 앱 밖으로 내보냈다 (백업 알림에서 빠진다). */
@@ -155,6 +235,11 @@ export class DocumentSession {
 
   async close(): Promise<void> {
     await this.save();
+    // 마지막 버전 뒤로 고친 내용이 있으면 닫을 때 한 번 남긴다.
+    if (this.unversioned) {
+      const stored = await library.get(this.entry.id).catch(() => undefined);
+      if (stored) await this.addVersion(stored.bytes, 'auto');
+    }
     this.doc.raw.free();
   }
 }

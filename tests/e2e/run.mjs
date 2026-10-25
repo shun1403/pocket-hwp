@@ -13,6 +13,12 @@ const browser = await chromium.launch({
   env: { ...process.env, LANG: process.env.LANG || 'C.UTF-8' },
 });
 const context = await browser.newContext({ ...devices['Pixel 7'], locale: 'ko-KR', acceptDownloads: true });
+// 처음 편집할 때 뜨는 사용법 안내는 따로 확인한다. 크롬의 파일 선택 API는 자동화할 수 없어
+// 기본으로 감추고, 원래 파일에 저장하는 단계에서만 가짜로 넣는다.
+await context.addInitScript(() => {
+  localStorage.setItem('tips:edit-seen', 'true');
+  delete window.showOpenFilePicker;
+});
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
@@ -446,6 +452,231 @@ await step('지운 문서를 백업에서 되살린다', async () => {
   await chooser.setFiles({ name: 'backup.zip', mimeType: 'application/zip', buffer: backupZip });
   await page.waitForFunction((n) => document.querySelectorAll('.recent-item').length === n, before);
   assert.match(await page.textContent('.toast-host'), /1개 추가/);
+});
+
+/** 시트·패널·편집 모드를 차례로 닫으며 처음 화면까지 돌아간다. */
+const goHome = async () => {
+  for (let i = 0; i < 6 && !(await page.isVisible('.home')); i += 1) {
+    await page.goBack();
+    await page.waitForTimeout(250);
+  }
+  await page.waitForSelector('.home:not([hidden])');
+};
+const newDoc = async () => {
+  await goHome();
+  await page.click('text=새 문서');
+  await page.waitForSelector('.doc.editing .page canvas');
+};
+const submitText = async (value) => {
+  await page.fill('.sheet.open .text-field', value);
+  await page.click('.sheet.open .dialog-form button[type="submit"]');
+};
+
+await step('기호 탭: 기호·상용구를 넣고 최근 기호에 남긴다', async () => {
+  await newDoc();
+  await page.click('.qb[aria-label="기호 도구"]');
+  await page.click('.panel-body .chip-btn:has-text("번호")');
+  await page.click('.panel-body .symbol[aria-label="기호 ①"]');
+  assert.equal(await paraText(), '①');
+  assert.ok(await page.isVisible('.panel-body .panel-section:has-text("최근에 쓴 기호") .symbol[aria-label="기호 ①"]'));
+  await page.click('.panel-body .phrase.add');
+  await submitText('위와 같이 보고합니다.');
+  await page.click('.panel-body .phrase:has-text("위와 같이 보고합니다.")');
+  assert.equal(await paraText(), '①위와 같이 보고합니다.');
+});
+
+await step('쪽 탭: 꼬리말에 쪽 번호를 넣는다', async () => {
+  await page.click('.panel-tab:has-text("쪽")');
+  await page.click('.panel-body .chip-btn[aria-label="쪽 번호 - 1 -"]');
+  const svg = await editor((ed) => ed.doc.raw.renderPageSvg(0));
+  assert.match(svg, />1<\/text>/);
+  assert.match(svg, />-<\/text>/);
+});
+
+await step('서식 채우기: 누름틀을 차례로 채우고, 다시 열면 채우기를 권한다', async () => {
+  await editor((ed) => {
+    const raw = ed.doc.raw;
+    raw.splitParagraph(0, 0, raw.getParagraphLength(0, 0));
+    raw.insertText(0, 1, 0, '성명:   연락처: ');
+    raw.insertClickHereField(0, 1, 11, '전화번호', '', 'phone', true);
+    raw.insertClickHereField(0, 1, 4, '이름을 쓰세요', '', 'name', true);
+    ed.rerender();
+  });
+  await page.click('.panel-tab:has-text("입력")');
+  await page.click('.tile[aria-label="서식 채우기"]');
+  await page.waitForSelector('.form-fill:not([hidden])');
+  assert.equal(await page.textContent('.ff-label'), '이름을 쓰세요');
+  assert.equal(await page.textContent('.ff-count'), '1 / 2');
+  await page.fill('.ff-input', '홍길동');
+  await page.press('.ff-input', 'Enter');
+  assert.equal(await page.textContent('.ff-label'), '전화번호');
+  await page.fill('.ff-input', '010-1234-5678');
+  await page.press('.ff-input', 'Enter');
+  await page.waitForSelector('.form-fill', { state: 'hidden' });
+  const values = await editor((ed) => JSON.parse(ed.doc.raw.getFieldList()).map((f) => f.value));
+  assert.deepEqual(values, ['홍길동', '010-1234-5678']);
+  // 실행 취소로 마지막 빈칸을 되돌릴 수 있다.
+  await page.click('[aria-label="실행 취소"]');
+  assert.deepEqual(await editor((ed) => JSON.parse(ed.doc.raw.getFieldList()).map((f) => f.value)), ['홍길동', '']);
+  await page.click('.done-btn');
+  await page.click('[aria-label="문서 닫기"]');
+  await page.waitForSelector('.home:not([hidden])');
+  await page.click('.recent-open');
+  await page.waitForSelector('.fill-chip:not([hidden])');
+  assert.match(await page.textContent('.fill-chip'), /빈칸 2개/);
+  await page.click('.fill-chip');
+  await page.waitForSelector('.form-fill:not([hidden])');
+  assert.equal(await page.inputValue('.ff-input'), '홍길동');
+  await page.click('.ff-done');
+});
+
+await step('표 탭: 여러 칸을 골라 한 번에 합친다', async () => {
+  await page.click('.qb[aria-label="입력 도구"]');
+  await page.click('.tile[aria-label="표"]');
+  await page.click('.sheet .primary-btn:has-text("표 넣기")');
+  await page.waitForTimeout(200);
+  // 표의 첫 칸으로 캐럿을 옮긴다.
+  await editor((ed) => {
+    const layout = JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.find((c) => c.type === 'table');
+    const pos = { sec: 0, para: layout.paraIdx, offset: 0, cellPath: [{ controlIndex: layout.controlIdx, cellIndex: 0, cellParaIndex: 0 }] };
+    ed.select(pos, pos);
+  });
+  await page.click('.qb[aria-label="표 도구"]');
+  await page.click('.panel-body [aria-label="오른쪽으로 늘리기"]');
+  await page.click('.panel-body [aria-label="오른쪽으로 늘리기"]');
+  assert.equal(await page.$$eval('.range-rect', (els) => els.length), 3);
+  await page.click('.tile[aria-label="고른 칸 합치기"]');
+  const span = await editor((ed) => {
+    const layout = JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.find((c) => c.type === 'table');
+    return JSON.parse(ed.doc.raw.getCellInfo(0, layout.paraIdx, layout.controlIdx, 0)).colSpan;
+  });
+  assert.equal(span, 3);
+  assert.equal(await page.$$eval('.range-rect', (els) => els.length), 0);
+});
+
+await step('서명을 손가락으로 그려 넣고, 저장한 서명을 다시 쓴다', async () => {
+  // 표 칸 밖, 첫 문단 끝에 넣는다.
+  await editor((ed) => {
+    const end = { sec: 0, para: 0, offset: ed.doc.raw.getParagraphLength(0, 0) };
+    ed.select(end, end);
+  });
+  const pictures = () => editor((ed) => JSON.stringify(JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.map((c) => c.type)));
+  const before = await pictures();
+  await openTab('입력');
+  await page.click('.tile[aria-label="서명·도장"]');
+  await page.waitForSelector('.sheet.open .sign-canvas');
+  await page.waitForTimeout(400); // 시트가 다 올라온 뒤 그린다
+  const box = await page.locator('.sheet.open .sign-canvas').boundingBox();
+  const pts = [0.2, 0.35, 0.5, 0.65, 0.8].map((t, i) => ({ x: box.x + box.width * t, y: box.y + box.height * (i % 2 ? 0.35 : 0.6) }));
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [pts[0]] });
+  for (const p of pts.slice(1)) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [p] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  assert.ok(await page.$eval('.sheet.open .sign-hint', (e) => e.hidden), '서명이 그려져야 함');
+  await page.click('.sheet.open .primary-btn:has-text("넣기")');
+  await page.waitForFunction((b) => {
+    const ed = window.__pocket.docScreen().editor;
+    return JSON.stringify(JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.map((c) => c.type)) !== b;
+  }, before);
+  const after = JSON.parse(await pictures());
+  assert.equal(after.length, JSON.parse(before).length + 1);
+  await openTab('입력');
+  await page.click('.tile[aria-label="서명·도장"]');
+  await page.waitForSelector('.sheet.open .saved-sign-btn');
+  await page.click('.sheet.open .saved-sign-btn');
+  await page.waitForFunction((n) => {
+    const ed = window.__pocket.docScreen().editor;
+    return JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.length === n;
+  }, after.length + 1);
+});
+
+await step('버전 기록: 다른 버전으로 되돌리고, 사용법을 다시 본다', async () => {
+  await goHome();
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('text=문서 열기')]);
+  await chooser.setFiles({ name: '버전 시험.hwp', mimeType: 'application/x-hwp', buffer: exported });
+  await page.waitForSelector('.doc .page canvas');
+  await page.click('[aria-label="편집하기"]');
+  await page.keyboard.type('지울 글 ');
+  await page.click('.done-btn');
+  assert.match(await editor((ed) => ed.doc.raw.getTextRange(0, 0, 0, 40)), /지울 글/);
+  await page.click('[aria-label="더보기"]');
+  await page.click('.sheet-row:has-text("버전 기록")');
+  await page.click('.sheet.open .version-row:has-text("처음 연 상태")');
+  await page.click('.sheet.open .sheet-row:has-text("이 버전으로 되돌리기")');
+  await page.click('.sheet.open .primary-btn:has-text("되돌리기")');
+  await page.waitForFunction(() => {
+    const t = window.__pocket.docScreen()?.session.doc.raw.getTextRange(0, 0, 0, 40);
+    return t === 'Pocket 한국';
+  });
+  // 되돌리기 전 내용은 버전 기록에 남는다.
+  await page.click('[aria-label="더보기"]');
+  await page.click('.sheet-row:has-text("버전 기록")');
+  await page.waitForSelector('.sheet.open .version-row:has-text("되돌리기 전 내용")');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+  await page.click('[aria-label="더보기"]');
+  await page.click('.sheet-row:has-text("사용법")');
+  await page.waitForSelector('.sheet.open .tip');
+  assert.ok((await page.$$('.sheet.open .tip')).length >= 4);
+  await page.click('.sheet.open .primary-btn:has-text("알겠어요")');
+});
+
+await step('원래 파일에 저장: 연 파일 자리에 고친 내용을 덮어쓴다', async () => {
+  await goHome();
+  // 크롬의 파일 선택 API 대신 OPFS(브라우저 안 파일) 핸들을 돌려준다. 진짜 파일 핸들이라 저장·쓰기가 그대로 동작한다.
+  // (이 환경의 OPFS는 한글 파일 이름을 받지 않아 영문 이름을 쓴다.)
+  await page.evaluate(async (b64) => {
+    const dir = await navigator.storage.getDirectory();
+    const handle = await dir.getFileHandle('original.hwp', { create: true });
+    const w = await handle.createWritable();
+    await w.write(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+    await w.close();
+    window.showOpenFilePicker = async () => [handle];
+  }, exported.toString('base64'));
+  await page.click('text=문서 열기');
+  await page.waitForSelector('.doc .page canvas');
+  await page.click('[aria-label="편집하기"]');
+  await page.keyboard.type('덮어쓴 ');
+  await page.click('[aria-label="원래 파일(original.hwp)에 저장"]');
+  await page.waitForSelector('.toast-host:has-text("원래 파일")');
+  const text = await page.evaluate(async () => {
+    const dir = await navigator.storage.getDirectory();
+    const file = await (await dir.getFileHandle('original.hwp')).getFile();
+    const Ctor = window.__pocket.docScreen().session.doc.raw.constructor;
+    const doc = new Ctor(new Uint8Array(await file.arrayBuffer()));
+    const t = doc.getTextRange(0, 0, 0, 40);
+    doc.free();
+    return t;
+  });
+  assert.equal(text, '덮어쓴 Pocket 한국');
+  await page.click('.done-btn');
+});
+
+await step('홈: 고정·사본 만들기·이름으로 찾기', async () => {
+  await goHome();
+  const names = await page.$$eval('.recent-name', (els) => els.map((e) => e.textContent));
+  const last = names[names.length - 1];
+  await page.click(`.recent-item:last-child .icon-btn[aria-label$="더보기"]`);
+  await page.click('.sheet.open .sheet-row:has-text("맨 위에 고정")');
+  await page.waitForFunction((n) => document.querySelector('.recent-item .recent-name')?.textContent === n, last);
+  assert.ok(await page.$('.recent-item:first-child .pin-mark'));
+  await page.click('.recent-item:first-child .icon-btn[aria-label$="더보기"]');
+  await page.click('.sheet.open .sheet-row:has-text("사본 만들기")');
+  await page.waitForSelector('.recent-name:has-text("(사본)")');
+  assert.ok(await page.isVisible('.home-search'), '문서가 많으면 찾기 칸이 보인다');
+  await page.fill('.home-search', '(사본)');
+  assert.equal(await page.$$eval('.recent-item', (els) => els.length), 1);
+  await page.fill('.home-search', '');
+});
+
+await step('읽기 모드에 읽어 주기 버튼이 있다', async () => {
+  await page.click('.recent-open');
+  await page.waitForSelector('.doc .page canvas');
+  await page.click('[aria-label="읽기 모드"]');
+  await page.waitForSelector('.speak-bar:not([hidden]) .speak-play');
+  assert.match(await page.textContent('.speak-rate'), /배/);
+  await page.click('.speak-rate');
+  assert.equal(await page.textContent('.speak-rate'), '1.25배');
+  await page.click('[aria-label="읽기 모드 닫기"]');
 });
 
 await step('페이지 오류가 없다', async () => {
