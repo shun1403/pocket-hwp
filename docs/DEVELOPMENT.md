@@ -33,6 +33,46 @@ node scripts/render-icons.mjs
 pnpm dlx @capacitor/assets generate --iconBackgroundColor '#2f5ee8' --splashBackgroundColor '#ffffff' --splashBackgroundColorDark '#121316'
 ```
 
+## 안드로이드 APK 릴리스
+
+`v`로 시작하는 태그를 올리면 `.github/workflows/release.yml`이 서명된 APK를 만들어 GitHub Releases에 올립니다.
+사용자는 휴대폰 브라우저로 Releases 페이지에서 바로 받아 설치합니다 (README의 설치 안내 참고).
+
+### 1. 서명 키 만들기 (처음 한 번)
+
+같은 키로 서명한 APK끼리만 업데이트가 됩니다. **키를 잃어버리면 기존 사용자는 지우고 다시 설치해야 하니**
+키 파일과 비밀번호를 안전한 곳(비밀번호 관리자 등)에 따로 보관하세요. 저장소에는 절대 올리지 않습니다.
+
+```sh
+keytool -genkeypair -v -keystore pocket-hwp-release.jks -alias pocket-hwp \
+  -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 pocket-hwp-release.jks > keystore.b64   # macOS: base64 -i pocket-hwp-release.jks -o keystore.b64
+```
+
+### 2. GitHub에 비밀 값 넣기
+
+저장소 **Settings → Secrets and variables → Actions → New repository secret**:
+
+| 이름 | 값 |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | `keystore.b64` 파일 내용 |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore 비밀번호 |
+| `ANDROID_KEY_ALIAS` | `pocket-hwp` (위에서 정한 alias) |
+| `ANDROID_KEY_PASSWORD` | 키 비밀번호 (따로 정하지 않았으면 keystore 비밀번호와 같음) |
+
+비밀 값이 없으면 워크플로는 임시 키로 서명하고 경고를 남깁니다. 그 APK는 설치는 되지만 다음 버전으로 업데이트되지 않습니다.
+
+### 3. 릴리스 올리기
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+몇 분 뒤 Releases에 `PocketHWP-0.2.0.apk`가 올라갑니다. 앱 버전 이름은 태그에서, 버전 코드는 워크플로 실행 번호에서
+가져오므로 새 릴리스가 항상 이전 릴리스보다 높은 버전 코드를 가집니다. Actions 탭에서 **안드로이드 APK 릴리스**를
+직접 실행하면 릴리스 없이 APK만 결과물로 받을 수 있습니다 (시험용).
+
 ## 구조
 
 ```text
@@ -96,6 +136,18 @@ rhwp의 글자 위치(charOffset)에는 개체(각주·수식·그림 등)가 �
 
 rhwp 스냅샷(`saveSnapshot`/`restoreSnapshot`)을 씁니다. 연속 타이핑은 한 단계로 묶고, 버려진 스냅샷은
 `discardSnapshot`으로 해제합니다. 한도는 엔진의 `snapshotCapacity()`를 넘지 않습니다.
+
+### 보관함과 데이터 보호
+
+문서는 IndexedDB(`platform/library.ts`)에만 저장하고 서버로 보내지 않습니다. 웹 앱에서는 브라우저가
+저장 공간 부족이나(모든 브라우저) 오래 쓰지 않음(사파리)을 이유로 데이터를 지울 수 있으므로:
+
+- 문서를 처음 열 때 `navigator.storage.persist()`를 요청합니다 (`platform/storage.ts`).
+- 각 문서에 `exportedAt`(마지막으로 앱 밖에 HWP/HWPX 사본을 남긴 때)을 기록하고, 편집 뒤 아직 내보내지 않은
+  문서는 홈에서 "백업 전"으로 표시하고 알림을 띄웁니다.
+- 보관함 전체를 ZIP(`export/zip.ts`, 압축 없이 담는 형식)으로 백업·복원합니다 (`app/backup.ts`).
+  ZIP 안에는 문서 파일과 `pocket-hwp-backup.json` 목록이 들어 있어, 다른 앱에서 풀어도 바로 열 수 있습니다.
+- 아이폰 사파리 탭에서 열면 홈 화면에 추가하라고 안내합니다 (탭과 홈 화면 앱은 보관함이 따로입니다).
 
 ### 받은 파일
 

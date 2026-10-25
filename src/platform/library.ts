@@ -12,6 +12,13 @@ export interface LibraryEntry {
   updatedAt: number;
   edited: boolean;
   thumbnail?: string;
+  /** 마지막으로 앱 밖(공유·내려받기·백업)으로 내보낸 때 */
+  exportedAt?: number;
+}
+
+/** 편집한 뒤 아직 앱 밖으로 내보내지 않은 문서인가 (지워지면 되살릴 수 없다) */
+export function needsBackup(e: Pick<LibraryEntry, 'edited' | 'updatedAt' | 'exportedAt'>): boolean {
+  return e.edited && (e.exportedAt ?? 0) < e.updatedAt;
 }
 
 export type LibrarySummary = Omit<LibraryEntry, 'bytes'>;
@@ -63,6 +70,16 @@ export const library = {
   },
   async put(entry: LibraryEntry): Promise<void> {
     await tx('readwrite', (s) => s.put(entry));
+  },
+  /** 앱 밖으로 내보냈다고 표시한다. */
+  async markExported(ids: string[], at = Date.now()): Promise<void> {
+    for (const id of ids) {
+      const e = await library.get(id);
+      if (e) await library.put({ ...e, exportedAt: at });
+    }
+  },
+  async all(): Promise<LibraryEntry[]> {
+    return tx<LibraryEntry[]>('readonly', (s) => s.getAll() as IDBRequest<LibraryEntry[]>);
   },
   async remove(id: string): Promise<void> {
     await tx('readwrite', (s) => s.delete(id));

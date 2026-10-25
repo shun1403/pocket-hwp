@@ -7,9 +7,11 @@ import { createServer } from 'vite';
 
 const server = await createServer({ server: { port: 5199, strictPort: true }, logLevel: 'error' });
 await server.listen();
-const browser = await chromium.launch(
-  process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {},
-);
+const browser = await chromium.launch({
+  ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}),
+  // 로캘이 없는 환경(LANG 미설정)에서는 Chromium이 한글 파일 이름을 "download"로 바꿔 버린다.
+  env: { ...process.env, LANG: process.env.LANG || 'C.UTF-8' },
+});
 const context = await browser.newContext({ ...devices['Pixel 7'], locale: 'ko-KR', acceptDownloads: true });
 const page = await context.newPage();
 const errors = [];
@@ -406,6 +408,44 @@ await step('암호 문서를 열면 암호를 물어보고 연다', async () => 
   await page.waitForSelector('.doc .page canvas');
   const text = await page.evaluate(() => window.__pocket.docScreen().session.doc.raw.getTextRange(0, 0, 0, 30));
   assert.match(text, /Pocket/);
+});
+
+let backupZip;
+await step('편집하고 내보내지 않은 문서는 백업 알림과 “백업 전” 표시가 뜬다', async () => {
+  await page.goBack();
+  await page.waitForSelector('.home:not([hidden])');
+  await page.click('text=새 문서');
+  await page.waitForSelector('.doc.editing .page canvas');
+  await page.keyboard.type('백업할 글');
+  await page.click('.done-btn');
+  await page.click('[aria-label="문서 닫기"]');
+  await page.waitForSelector('.home:not([hidden]) .notice');
+  assert.match(await page.textContent('.notice'), /이 기기에만 있어요/);
+  assert.ok(await page.isVisible('.recent-item .badge.warn'));
+});
+
+await step('알림의 백업 버튼으로 모든 문서를 ZIP으로 내보낸다', async () => {
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('.notice-btn:has-text("백업")')]);
+  assert.match(download.suggestedFilename(), /^Pocket HWP 백업 .*\.zip$/);
+  backupZip = await readFile(await download.path());
+  assert.equal(backupZip.subarray(0, 4).toString('hex'), '504b0304');
+  assert.ok(backupZip.includes(Buffer.from('pocket-hwp-backup.json')));
+  await page.waitForFunction(() => !document.querySelector('.recent-item .badge.warn'));
+  assert.equal(await page.$('.notice:has-text("이 기기에만")'), null);
+});
+
+await step('지운 문서를 백업에서 되살린다', async () => {
+  const before = await page.$$eval('.recent-item', (els) => els.length);
+  await page.click('.recent-item .icon-btn[aria-label$="더보기"]');
+  await page.click('.sheet.open .sheet-row.danger');
+  await page.click('.sheet.open .danger-btn');
+  await page.waitForFunction((n) => document.querySelectorAll('.recent-item').length === n - 1, before);
+  await page.click('[aria-label="보관함 관리"]');
+  await page.waitForSelector('.sheet.open .storage-state');
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('.sheet.open .sheet-row:has-text("백업에서 불러오기")')]);
+  await chooser.setFiles({ name: 'backup.zip', mimeType: 'application/zip', buffer: backupZip });
+  await page.waitForFunction((n) => document.querySelectorAll('.recent-item').length === n, before);
+  assert.match(await page.textContent('.toast-host'), /1개 추가/);
 });
 
 await step('페이지 오류가 없다', async () => {

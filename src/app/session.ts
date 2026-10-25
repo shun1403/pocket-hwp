@@ -55,15 +55,16 @@ export class DocumentSession {
     const session = new DocumentSession(
       new EditableDocument(raw),
       {
-      id: id ?? newId(),
-      name,
-      format: existing?.format ?? detectFormat(name, bytes),
-      size: bytes.length,
-      pages: raw.pageCount(),
-      openedAt: now,
-      updatedAt: existing?.updatedAt ?? now,
-      edited: existing?.edited ?? false,
-      thumbnail: existing?.thumbnail,
+        id: id ?? newId(),
+        name,
+        format: existing?.format ?? detectFormat(name, bytes),
+        size: bytes.length,
+        pages: raw.pageCount(),
+        openedAt: now,
+        updatedAt: existing?.updatedAt ?? now,
+        edited: existing?.edited ?? false,
+        thumbnail: existing?.thumbnail,
+        exportedAt: existing?.exportedAt,
       },
       password,
     );
@@ -134,6 +135,14 @@ export class DocumentSession {
     } finally {
       this.saving = null;
     }
+  }
+
+  /** HWP/HWPX 사본을 앱 밖으로 내보냈다 (백업 알림에서 빠진다). */
+  async markExported(): Promise<void> {
+    await this.save();
+    const at = Date.now();
+    this.entry = { ...this.entry, exportedAt: at };
+    await library.markExported([this.entry.id], at);
   }
 
   async rename(name: string): Promise<void> {
