@@ -1,0 +1,44 @@
+{
+  "name": "pocket-hwp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "모바일(Android/iOS)에 맞춘 오픈소스 한글(HWP/HWPX) 문서 뷰어·편집기",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc --noEmit && vite build",
+    "build:preview": "node scripts/build-preview.mjs",
+    "preview": "vite preview --host",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "node tests/e2e/run.mjs",
+    "cap:sync": "pnpm run build && cap sync",
+    "android": "pnpm run cap:sync && cap open android",
+    "ios": "pnpm run cap:sync && cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/clipboard": "^8.0.1",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/keyboard": "^8.0.6",
+    "@capacitor/share": "^8.0.3",
+    "@capacitor/status-bar": "^8.0.4",
+    "@rhwp/core": "0.8.7"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
+    "playwright": "1.63.0",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=20.19"
+  }
+}
