@@ -139,7 +139,11 @@ export function specialAt(doc: EditableDocument, page: number, x: number, y: num
       if (info.ok) return { kind: 'note', target: { sec: info.sectionIdx, para: info.paraIdx, ctrl: info.controlIdx } };
     }
     const hf = parse<{ hit: boolean; isHeader?: boolean; sectionIndex?: number; applyTo?: number }>(doc.raw.hitTestHeaderFooter(page, x, y));
-    if (hf.hit) return { kind: 'headerFooter', target: { sec: hf.sectionIndex!, isHeader: !!hf.isHeader, applyTo: hf.applyTo ?? 0 } };
+    if (hf.hit) {
+      // 머리말·꼬리말이 없어도 그 여백 자리는 hit 으로 나온다. 실제로 있을 때만 머리말 탭으로 본다.
+      const target: HfTarget = { sec: hf.sectionIndex ?? 0, isHeader: !!hf.isHeader, applyTo: hf.applyTo ?? 0 };
+      if (headerFooterExists(doc, target)) return { kind: 'headerFooter', target };
+    }
   } catch {
     // 히트테스트를 못 하면 본문으로 본다.
   }
