@@ -1,7 +1,7 @@
 name: 안드로이드 APK 릴리스
 
 # v로 시작하는 태그(예: v0.2.0)를 올리면 서명된 APK를 만들어 GitHub Releases에 올린다.
-# Actions 탭에서 직접 실행하면 릴리스 없이 APK만 결과물(artifact)로 남긴다.
+# Actions 탭에서 직접 실행하거나 안드로이드 빌드를 바꾸는 PR이면 릴리스 없이 APK만 결과물(artifact)로 남긴다.
 #
 # 서명 키(저장소 Settings → Secrets and variables → Actions):
 #   ANDROID_KEYSTORE_BASE64  keystore 파일을 base64로 바꾼 값
@@ -11,6 +11,12 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+  # 서명·빌드 설정을 바꾸는 PR은 합치기 전에 APK를 실제로 만들어 본다.
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - android/**
+      - capacitor.config.ts
 
 permissions:
   contents: write
