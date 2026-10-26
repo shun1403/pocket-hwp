@@ -8,7 +8,18 @@ import { openExportSheet, openInfoSheet, openPagesSheet, saveToOriginal } from '
 import { fieldCount } from '../doc/ops/fields';
 import { FormFill } from './form-fill';
 import { type VersionActions, openVersionsSheet } from './versions-sheet';
-import { openBookmarksSheet, openChartSheet, openHeaderFooterSheet, openLinkSheet, openNoteSheet, openOutlineSheet, openShapeSheet } from './doc-tools';
+import {
+  addMemoAtCaret,
+  openBookmarksSheet,
+  openChartSheet,
+  openHeaderFooterSheet,
+  openLinkSheet,
+  openMemoById,
+  openMemosSheet,
+  openNoteSheet,
+  openOutlineSheet,
+  openShapeSheet,
+} from './doc-tools';
 import { maybeShowEditTips, openTips } from './tips';
 import { h, keepFocus } from './dom';
 import { icon } from './icons';
@@ -67,6 +78,7 @@ export class DocScreen {
         else void openNoteSheet(this.editor, hit.target);
       },
       link: (pos, link) => openLinkSheet(this.editor, pos, link),
+      memo: (id) => void openMemoById(this.editor, id),
       shortcut: (k) => {
         if (k === 's') {
           if (session.sourceName) void saveToOriginal(session);
@@ -80,7 +92,11 @@ export class DocScreen {
         return false;
       },
     });
-    session.onSaved = () => this.setStatus('자동 저장됨');
+    session.onSaved = () => {
+      // 메모를 넣으면 HWPX로 저장되며 이름 끝(.hwp → .hwpx)이 바뀔 수 있다.
+      this.title.textContent = session.name;
+      this.setStatus('자동 저장됨');
+    };
     this.panel = new ToolPanel({
       editor: this.editor,
       session,
@@ -222,6 +238,7 @@ export class DocScreen {
       row('form', '서식 채우기 (빈칸 차례로 채우기)', () => this.openFormFill()),
       row('list', '목차 (제목으로 이동)', () => openOutlineSheet(this.editor)),
       row('bookmark', '책갈피', () => openBookmarksSheet(this.editor)),
+      row('memo', '메모', () => void openMemosSheet(this.editor)),
       row('pages', '쪽 모아 보기', () => openPagesSheet(this.session, this.editor.view)),
       row('zoomFit', '쪽 전체 보기', () => this.editor.view.setZoomFactor(1)),
       row('text', '본문 폭에 맞추기 (글자 크게)', () => this.editor.view.fitBody(window.innerHeight / 2)),
@@ -440,6 +457,7 @@ export class DocScreen {
           else toast('붙여 넣을 글이 없어요.');
         }),
       item('모두 선택', () => this.editor.selectAll()),
+      editing && item('메모', () => addMemoAtCaret(this.editor)),
       editing && item('서식', () => this.openPanel('char')),
       !editing && item('편집', () => this.setEditing(true)),
     ].filter((x): x is HTMLElement => !!x);

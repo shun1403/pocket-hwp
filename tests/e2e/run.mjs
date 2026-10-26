@@ -968,6 +968,60 @@ await step('차트: 값을 표로 보여 주고, 엔진이 못 바꾸면 이유�
   await page.goBack();
 });
 
+await step('메모: 고른 글에 넣고, 쪽에 표시하고, 읽고·고치고·지운다', async () => {
+  await newDoc();
+  await page.keyboard.type('회의 자료 초안입니다');
+  await editor((ed) => ed.select({ sec: 0, para: 0, offset: 0 }, { sec: 0, para: 0, offset: 5 }));
+  await openTab('입력');
+  await page.click('.tile[aria-label="메모"]');
+  await page.waitForSelector('.sheet.open .dialog-message:has-text("“회의 자료”에 메모를 달아요")');
+  await page.fill('.sheet.open textarea.text-field', '숫자 다시 확인\n금요일까지');
+  await page.fill('.sheet.open input.text-field', '홍길동');
+  await page.click('.sheet.open .dialog-form button[type="submit"]');
+  await page.waitForSelector('.toast-host:has-text("메모를 넣었어요")');
+  await page.waitForSelector('.memo-mark');
+  assert.equal(await editor((ed) => ed.doc.paraText({ sec: 0, para: 0, offset: 0 })), '회의 자료 초안입니다', '본문은 그대로');
+  // 메모가 지워지지 않게 HWPX로 저장한다.
+  await page.waitForFunction(() => document.querySelector('.app-title')?.textContent?.endsWith('.hwpx'));
+
+  // 캐럿이 메모 위에 있으면 그 메모를 고친다.
+  await editor((ed) => ed.select({ sec: 0, para: 0, offset: 2 }, { sec: 0, para: 0, offset: 2 }));
+  await page.click('.tile[aria-label="메모"]');
+  await page.waitForSelector('.sheet.open .dialog-message:has-text("홍길동")');
+  assert.equal(await page.inputValue('.sheet.open textarea.text-field'), '숫자 다시 확인\n금요일까지');
+  await page.fill('.sheet.open textarea.text-field', '고친 메모');
+  await page.click('.sheet.open .dialog-form button[type="submit"]');
+  await page.waitForSelector('.toast-host:has-text("메모를 고쳤어요")');
+
+  // 보기 모드: 메모 단 글을 누르면 메모를 읽는다.
+  await page.click('.done-btn');
+  await page.waitForTimeout(400); // 보기 배율로 돌아가는 동안 표시가 다시 그려진다.
+  const mark = await page.evaluate(() => {
+    const r = document.querySelector('.memo-mark').getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  });
+  await page.touchscreen.tap(mark.x + mark.width / 2, mark.y + mark.height / 2);
+  await page.waitForSelector('.sheet.open .memo-body:has-text("고친 메모")');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+  await page.click('[aria-label="더보기"]');
+  await page.click('.sheet.open .sheet-row:has-text("메모")');
+  await page.waitForSelector('.sheet.open .memo-card:has-text("고친 메모"):has-text("회의 자료")');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+
+  // 지우면 글은 남고 표시는 사라진다.
+  await page.click('[aria-label="편집하기"]');
+  await editor((ed) => ed.select({ sec: 0, para: 0, offset: 1 }, { sec: 0, para: 0, offset: 1 }));
+  await openTab('입력');
+  await page.click('.tile[aria-label="메모"]');
+  await page.click('.sheet.open .secondary-btn.danger:has-text("메모 지우기")');
+  await page.click('.sheet.open .primary-btn:has-text("지우기")');
+  await page.waitForSelector('.toast-host:has-text("메모를 지웠어요")');
+  await page.waitForFunction(() => !document.querySelector('.memo-mark'));
+  assert.equal(await editor((ed) => ed.doc.paraText({ sec: 0, para: 0, offset: 0 })), '회의 자료 초안입니다');
+});
+
 await step('페이지 오류가 없다', async () => {
   assert.deepEqual(errors, []);
 });

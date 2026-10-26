@@ -1,11 +1,13 @@
 import { type ChartData, chartData, setChartData } from '../doc/ops/chart';
 import { type BookmarkInfo, type LinkInfo, bookmarkPos, bookmarks, deleteBookmark, removeLink, renameBookmark, safeLinkUrl, updateLink } from '../doc/ops/links';
 import { addBookmark } from '../doc/ops/inserts';
+import { type Memo, MemoError, addMemo, deleteMemo, editMemo, memoCount, readMemos } from '../doc/ops/memos';
 import { type HfTarget, type NoteTarget, deleteNote, headerFooterLines, noteText, setHeaderFooterAlignment, setHeaderFooterLines, setNoteText } from '../doc/ops/notes';
 import { type PageObject, objectsOnPage } from '../doc/ops/objects';
 import { outline } from '../doc/ops/outline';
 import { attachCaption, groupObjects, setShapeFill, setShapeLineColor, setShapeOrder, shapeColors, ungroup } from '../doc/ops/shapes';
-import { type DocPos, inCell } from '../doc/position';
+import { type DocPos, inCell, innerPara, sameContainer } from '../doc/position';
+import { readPref, writePref } from '../platform/prefs';
 import type { Editor } from '../editor/editor';
 import { askConfirm, askLongText, askText } from './dialog';
 import { h } from './dom';
@@ -14,8 +16,9 @@ import { Sheet } from './sheet';
 import { toast } from './toast';
 
 /**
- * 문서 화면에서 여는 도구 시트들: 목차, 책갈피, 링크, 머리말·꼬리말·각주 고치기, 도형 모양, 차트 값.
- * 문서를 바꾸는 일은 모두 Editor.command / objectCommand 를 거친다.
+ * 문서 화면에서 여는 도구 시트들: 목차, 책갈피, 링크, 머리말·꼬리말·각주 고치기, 메모, 도형 모양, 차트 값.
+ * 문서를 바꾸는 일은 Editor.command / objectCommand 를 거친다. 메모만은 엔진 밖에서 HWPX를 고쳐
+ * Editor.replaceDocument 로 바꾼다 (doc/ops/memos.ts).
  */
 
 const SHAPE_COLORS = ['#000000', '#5b616e', '#c00000', '#e36c09', '#f2c300', '#2e7d32', '#2f5ee8', '#7030a0'];
@@ -173,6 +176,134 @@ export async function openNoteSheet(editor: Editor, target: NoteTarget): Promise
   });
   if (text === null || text === current.lines.join('\n')) return;
   editor.command((d) => setNoteText(d, target, text));
+}
+
+// ───────────── 메모 ─────────────
+
+const AUTHOR_KEY = 'memoAuthor';
+
+function memoWhen(iso: string | null): string {
+  const d = iso ? new Date(iso) : null;
+  return d && !Number.isNaN(d.getTime()) ? d.toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+}
+
+function memoMeta(m: Memo): string {
+  return [m.author, memoWhen(m.created)].filter(Boolean).join(' · ');
+}
+
+function quote(text: string): string {
+  const t = text.trim();
+  return t.length > 40 ? `“${t.slice(0, 40)}…”` : `“${t}”`;
+}
+
+async function runMemo(editor: Editor, make: () => Promise<Uint8Array>, done: string): Promise<void> {
+  try {
+    editor.replaceDocument(await make());
+    toast(done);
+  } catch (err) {
+    toast(err instanceof MemoError ? err.message : '메모를 쓰지 못했어요.', 4000);
+  }
+}
+
+/** 메모 목록. 누르면 그 자리로 가서 메모를 연다. */
+export async function openMemosSheet(editor: Editor): Promise<void> {
+  const doc = editor.document;
+  if (!doc) return;
+  const sheet = new Sheet({ title: '메모' });
+  if (editor.currentMode === 'edit') sheet.body.append(row('plus', '지금 자리에 메모 넣기', () => void addMemoAtCaret(editor), sheet));
+  const list = h('div.memo-list', {}, h('p.sheet-note', {}, '메모를 읽는 중이에요…'));
+  sheet.body.append(list);
+  sheet.open();
+  const memos = await readMemos(doc);
+  list.replaceChildren(
+    ...(memos.length
+      ? memos.map((m) =>
+          h(
+            'button.memo-card',
+            {
+              type: 'button',
+              onclick: () => {
+                sheet.close();
+                if (m.start) editor.goTo(m.start);
+                void openMemo(editor, m);
+              },
+            },
+            m.anchor.trim() ? h('span.memo-anchor', {}, quote(m.anchor)) : null,
+            h('span.memo-text', {}, m.text ?? '내용을 읽을 수 없는 메모예요.'),
+            memoMeta(m) ? h('span.memo-meta', {}, memoMeta(m)) : null,
+          ),
+        )
+      : [h('p.sheet-note', {}, '이 문서에는 메모가 없어요.')]),
+  );
+}
+
+/** 메모 번호로 연다 (쪽 위 메모 표시를 눌렀을 때). */
+export async function openMemoById(editor: Editor, id: number): Promise<void> {
+  const doc = editor.document;
+  const memo = doc ? (await readMemos(doc)).find((m) => m.id === id) : undefined;
+  if (memo) await openMemo(editor, memo);
+}
+
+/** 메모 하나: 편집 중이면 고치기·지우기, 아니면 읽기만 */
+async function openMemo(editor: Editor, m: Memo): Promise<void> {
+  const where = [m.anchor.trim() ? `${quote(m.anchor)}에 단 메모` : '', memoMeta(m)].filter(Boolean).join(' · ');
+  if (editor.currentMode !== 'edit' || !m.editable) {
+    const sheet = new Sheet({ title: '메모' });
+    if (where) sheet.body.append(h('p.sheet-note', {}, where));
+    sheet.body.append(
+      h('p.memo-body', {}, m.text ?? ''),
+      h('p.sheet-note', {}, m.editable ? '고치려면 편집을 눌러 주세요.' : '한글(.hwp) 파일에 든 메모라 이 앱에서는 내용을 읽거나 고칠 수 없어요.'),
+    );
+    sheet.open();
+    return;
+  }
+  const text = await askLongText('메모', m.text ?? '', '저장', {
+    message: where || undefined,
+    danger: {
+      label: '메모 지우기',
+      onClick: () =>
+        void askConfirm({ title: '메모 지우기', message: '이 메모를 지울까요? 메모를 단 글은 남아요.', confirmLabel: '지우기', danger: true }).then(
+          (ok) => {
+            if (ok) void runMemo(editor, () => deleteMemo(editor.document!, m.id), '메모를 지웠어요.');
+          },
+        ),
+    },
+  });
+  if (text === null || text === m.text) return;
+  await runMemo(editor, () => editMemo(editor.document!, m.id, text), '메모를 고쳤어요.');
+}
+
+/** 고른 글(없으면 캐럿 자리)에 새 메모를 단다. 캐럿이 메모 위에 있으면 그 메모를 연다. */
+export async function addMemoAtCaret(editor: Editor): Promise<void> {
+  const doc = editor.document;
+  const caret = editor.caretPos;
+  if (!doc || !caret || editor.currentMode !== 'edit') return;
+  const sel = editor.selection;
+  if (!sel) {
+    const existing = editor.memoAtCaret();
+    if (existing !== null) return openMemoById(editor, existing);
+  }
+  const [start, end] = sel ?? [caret, caret];
+  if (!sameContainer(start, end) || innerPara(start) !== innerPara(end)) {
+    toast('메모는 한 문단 안의 글에만 달 수 있어요. 글을 짧게 골라 주세요.');
+    return;
+  }
+  const anchor = sel ? editor.selectedText() : '';
+  const author = h('input.text-field', { type: 'text', 'aria-label': '쓴 사람', placeholder: '쓴 사람 (예: 홍길동)', value: readPref(AUTHOR_KEY, '') }) as HTMLInputElement;
+  const first = memoCount(doc) === 0;
+  const text = await askLongText('메모 넣기', '', '넣기', {
+    message: [
+      anchor.trim() ? `${quote(anchor)}에 메모를 달아요.` : '지금 자리에 메모를 달아요.',
+      first ? '메모가 지워지지 않도록 이 문서는 이제 HWPX(.hwpx)로 저장돼요.' : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
+    extra: author,
+  });
+  if (text === null || !text.trim()) return;
+  const who = author.value.trim();
+  writePref(AUTHOR_KEY, who);
+  await runMemo(editor, () => addMemo(doc, start, end, text, who || '사용자'), '메모를 넣었어요.');
 }
 
 // ───────────── 도형 ─────────────

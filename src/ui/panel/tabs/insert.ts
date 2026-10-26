@@ -1,6 +1,6 @@
 import { insertBreak, insertHyperlink, insertNote, insertPicture, insertTextBox } from '../../../doc/ops/inserts';
 import { type ShapeType, insertShape } from '../../../doc/ops/shapes';
-import { openBookmarksSheet, openLinkSheet } from '../../doc-tools';
+import { addMemoAtCaret, openBookmarksSheet, openLinkSheet } from '../../doc-tools';
 import { inCell, innerPara } from '../../../doc/position';
 import { pickFile } from '../../../platform/files';
 import { askText } from '../../dialog';
@@ -109,6 +109,7 @@ export const insertTab: TabDef = {
           { label: '미주', icon: 'footnote', onClick: () => void note(ctx, 'endnote') },
           { label: '링크', icon: 'link', onClick: () => void hyperlink(ctx) },
           { label: '책갈피', icon: 'bookmark', onClick: () => openBookmarksSheet(ed) },
+          { label: '메모', icon: 'memo', onClick: () => void addMemoAtCaret(ed) },
         ]),
       ),
       section(

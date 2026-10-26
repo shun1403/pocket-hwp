@@ -15,11 +15,13 @@ export interface FormTarget {
   fieldId?: number;
 }
 
-interface RawField {
+export interface RawField {
   fieldId: number;
   fieldType: string;
   name?: string;
   guide?: string;
+  command?: string;
+  value?: string;
   editableInForm?: boolean;
   startCharIdx: number;
   endCharIdx: number;
@@ -44,7 +46,7 @@ function parse<T>(json: string): T {
   return JSON.parse(json) as T;
 }
 
-function rawFields(doc: EditableDocument): RawField[] {
+export function rawFields(doc: EditableDocument): RawField[] {
   try {
     return parse<RawField[]>(doc.raw.getFieldList());
   } catch {
@@ -52,7 +54,7 @@ function rawFields(doc: EditableDocument): RawField[] {
   }
 }
 
-function fieldPos(f: RawField, offset: number): DocPos | null {
+export function fieldPos(f: RawField, offset: number): DocPos | null {
   const { sectionIndex: sec, paraIndex: para, path } = f.location;
   if (!path?.length) return { sec, para, offset };
   // 글상자 안 누름틀 등 표 칸이 아닌 경로는 아직 캐럿으로 갈 수 없다.

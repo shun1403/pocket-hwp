@@ -114,6 +114,8 @@ tests/e2e      모바일 에뮬레이션 E2E
 그래서 화면에 보이지 않는 `textarea`에 표식 문자(ZWSP) 하나를 넣어 두고, 입력 이벤트 뒤의 값을 표식과 비교해
 입력/Enter/Backspace를 알아냅니다(`doc/input-diff.ts`). 조합 중에는 값을 건드리지 않고 캐럿 위치에
 미리보기만 그리며, `compositionend`에서 확정된 글자를 문서에 넣습니다.
+삼성 키보드처럼 띄어쓰기 전까지 한 단어를 통째로 조합하는 키보드에서는 미리보기가 길어지므로,
+캐럿 자리에서 시작해 본문 단(표 안이면 그 칸) 폭 안에서 줄을 바꿔 그립니다(`Overlay.showComposition`).
 
 ### 렌더링과 메모리
 
@@ -152,6 +154,21 @@ rhwp의 글자 위치(charOffset)에는 개체(각주·수식·그림 등)가 �
 - 붙여넣기는 클립보드에 HTML이 있으면 `pasteHtml`로 모양째 넣고, 엔진이 읽지 못하면 글자만 넣는다.
 - 인쇄는 앱에서 PDF를 만들어 `DocumentFiles.print`(안드로이드 PrintManager, iOS UIPrintInteractionController)로 넘기고,
   브라우저에서는 쪽 그림을 인쇄용 화면에 깔고 `window.print()`를 연다.
+
+### 메모
+
+엔진은 HWPX 메모(`fieldBegin type="MEMO"` + 내용 `subList`)를 읽고 HWPX로 다시 쓸 때 그대로 지키지만,
+메모 내용을 꺼내거나 새로 만드는 API는 없습니다. 그래서 `doc/ops/memos.ts`는
+
+1. 넣을 자리에 엔진 누름틀을 자리표로 끼우고(스냅샷으로 곧바로 되돌림) 문서를 HWPX로 내보낸 뒤,
+2. HWPX 안의 자리표를 한글이 쓰는 모양 그대로의 메모 필드로 바꾸고(`memoProperties`도 없으면 넣음),
+3. 그 HWPX를 `Editor.replaceDocument`로 다시 엽니다.
+
+고치기·지우기도 같은 방식이고, 읽기는 내보낸 HWPX에서 메모 내용을 꺼냅니다. HWPX로 바꿀 때 엔진이 잃는 내용을
+보고하면 메모를 쓰지 않습니다. 엔진은 HWP(5.0)로 저장할 때 메모를 지키지 못하므로, 메모가 있는 문서의 보관본은
+HWPX로 두고(`DocumentSession.save`), HWP로 내보낼 때는 `exportDocument`가 손실 경고를 붙입니다.
+문서를 통째로 바꾸므로 엔진 스냅샷이 이어지지 않아, 메모를 쓰면 실행 취소 기록이 비워집니다.
+HWP 파일에서 연 메모(명령 `MEMO/…` 필드)는 엔진이 내용을 읽지 않아 목록에 자리만 보입니다.
 
 ### 실행 취소
 

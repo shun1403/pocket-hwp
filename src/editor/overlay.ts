@@ -19,6 +19,7 @@ export class Overlay {
   private readonly objectBox = document.createElement('div');
   private selection: HTMLDivElement[] = [];
   private highlight: { rects: PageRect[]; els: HTMLDivElement[] } = { rects: [], els: [] };
+  private marks: { rects: PageRect[]; els: HTMLDivElement[] } = { rects: [], els: [] };
 
   constructor(private readonly view: PageView) {
     this.caret.className = 'caret';
@@ -104,14 +105,25 @@ export class Overlay {
     this.drawHighlight();
   }
 
+  /** 메모를 단 글 표시. 빈 배열이면 지운다. */
+  setMarks(rects: PageRect[]): void {
+    this.marks.rects = rects;
+    this.drawHighlight();
+  }
+
   /** 확대·다시 그리기 뒤 위치를 다시 맞춘다. */
   drawHighlight(): void {
-    this.highlight.els.forEach((el) => el.remove());
-    this.highlight.els = [];
-    for (const r of this.highlight.rects) {
-      const el = document.createElement('div');
-      el.className = 'range-rect';
-      if (this.place(el, r.pageIndex, r.x, r.y, r.width, r.height)) this.highlight.els.push(el);
+    for (const [layer, cls] of [
+      [this.highlight, 'range-rect'],
+      [this.marks, 'memo-mark'],
+    ] as const) {
+      layer.els.forEach((el) => el.remove());
+      layer.els = [];
+      for (const r of layer.rects) {
+        const el = document.createElement('div');
+        el.className = cls;
+        if (this.place(el, r.pageIndex, r.x, r.y, r.width, r.height)) layer.els.push(el);
+      }
     }
   }
 
