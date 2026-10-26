@@ -97,6 +97,18 @@ await step('영문 입력과 한글 조합 입력이 문서에 들어간다', as
 await step('조합 중에는 캐럿 자리에 미리보기를 보여 준다', async () => {
   await cdp.send('Input.imeSetComposition', { text: '무', selectionStart: 1, selectionEnd: 1 });
   assert.equal(await page.textContent('.composition'), '무');
+  // 단어를 통째로 조합하는 키보드: 긴 조합도 쪽 밖으로 넘치지 않고 본문 폭 안에서 줄을 바꾼다.
+  const long = '가나다라마바사아자차카타파하'.repeat(4);
+  await cdp.send('Input.imeSetComposition', { text: long, selectionStart: long.length, selectionEnd: long.length });
+  await page.waitForFunction((t) => document.querySelector('.composition')?.textContent === t, long);
+  const box = await page.locator('.composition > span').evaluate((el) => {
+    const rects = [...el.getClientRects()];
+    const pg = el.closest('.page').getBoundingClientRect();
+    return { lines: rects.length, right: Math.max(...rects.map((r) => r.right)), pageRight: pg.right };
+  });
+  assert.ok(box.lines > 1, `줄 바꿈 (${box.lines}줄)`);
+  assert.ok(box.right <= box.pageRight, `쪽 안 (${box.right} ≤ ${box.pageRight})`);
+  await cdp.send('Input.imeSetComposition', { text: '무', selectionStart: 1, selectionEnd: 1 });
   await cdp.send('Input.insertText', { text: '' });
   await page.waitForFunction(() => !document.querySelector('.composition'));
   assert.equal(await paraText(), 'Pocket 한글');

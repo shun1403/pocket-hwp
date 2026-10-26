@@ -671,16 +671,21 @@ input:focus-visible {
 }
 
 .composition {
-  display: flex;
-  align-items: flex-end;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
   color: #111;
+  font-family: Pretendard, 'Noto Sans KR', sans-serif;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.composition > span {
   background: rgb(255 236 150 / 0.9);
   border-bottom: 2px solid var(--brand);
-  line-height: 1.15;
   padding: 0 1px;
-  font-family: Pretendard, 'Noto Sans KR', sans-serif;
-  z-index: 3;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .ime-input {

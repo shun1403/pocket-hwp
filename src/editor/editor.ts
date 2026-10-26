@@ -5,6 +5,7 @@ import {
   type CaretRect,
   type DocPos,
   type PageRect,
+  inCell,
   innerPara,
   orderRange,
   sameContainer,
@@ -15,6 +16,7 @@ import {
 import { type LinkInfo, linkAt } from '../doc/ops/links';
 import { type SpecialHit, specialAt } from '../doc/ops/notes';
 import { type PageObject, objectAt } from '../doc/ops/objects';
+import { cellContext, tableCells } from '../doc/ops/table';
 import { haptic } from '../platform/files';
 import { attachGestures } from '../view/gestures';
 import { PageView } from '../view/page-view';
@@ -441,8 +443,31 @@ export class Editor {
     }
     const rect = this.caretRect(this.caret);
     const fontPt = (this.pendingChar?.fontSize ?? this.doc.charProps(this.caret).fontSize ?? 1000) / 100;
-    this.overlay.showComposition(text, rect, (fontPt * 96) / 72);
+    this.overlay.showComposition(text, rect, (fontPt * 96) / 72, text && rect ? this.textBounds(rect) : null);
     this.overlay.showCaret(text ? null : rect, !text);
+  }
+
+  /** 캐럿 자리에서 글이 놓이는 가로 범위 (쪽 px): 표 칸이면 그 칸, 본문이면 그 단 */
+  private textBounds(rect: CaretRect): { left: number; right: number } | null {
+    const doc = this.doc!;
+    const caret = this.caret!;
+    if (inCell(caret)) {
+      const ctx = cellContext(doc, caret);
+      const box = ctx && tableCells(doc, ctx).find((c) => c.cellIdx === ctx.cell && c.pageIndex === rect.pageIndex);
+      // 칸 안쪽 여백만큼 띄운다 (기본 1.8mm ≈ 7px).
+      return box ? { left: box.x + 7, right: box.x + box.w - 7 } : null;
+    }
+    try {
+      const info = JSON.parse(doc.raw.getPageInfo(rect.pageIndex)) as {
+        bodyLeft: number;
+        bodyRight: number;
+        columns?: { x: number; width: number }[];
+      };
+      const col = info.columns?.find((c) => rect.x >= c.x - 1 && rect.x <= c.x + c.width + 1);
+      return col ? { left: col.x, right: col.x + col.width } : { left: info.bodyLeft, right: info.bodyRight };
+    } catch {
+      return null;
+    }
   }
 
   private emitState(): void {
