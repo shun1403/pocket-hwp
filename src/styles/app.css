@@ -2345,3 +2345,45 @@ input:focus-visible {
 .memo-body {
   margin: 8px 10px;
 }
+
+/* ───────────── 편집 용지 (F7) ───────────── */
+
+.mm-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 10px;
+  padding: 4px 8px;
+}
+
+.mm-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.mm-input {
+  position: relative;
+  display: flex;
+}
+
+.mm-field {
+  width: 100%;
+  min-width: 0;
+  padding-right: 44px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-unit {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--text-2);
+}
+
+.page-summary.error {
+  color: var(--danger);
+}

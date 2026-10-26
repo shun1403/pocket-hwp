@@ -16,6 +16,7 @@ import {
   setPageNumber,
 } from '../../../doc/ops/page';
 import { openHeaderFooterSheet } from '../../doc-tools';
+import { openPageSetupSheet } from '../page-setup-sheet';
 import { h } from '../../dom';
 import { Bindings, buttonRow, chips, section, swatches } from '../controls';
 
@@ -39,6 +40,10 @@ export const pageTab: TabDef = {
     const el = h(
       'div.tab-body',
       {},
+      section(
+        '편집 용지',
+        buttonRow(b, [{ label: '편집 용지', content: '여백·크기 자세히 (F7)', onClick: () => openPageSetupSheet(ed) }]),
+      ),
       section(
         '용지',
         chips(

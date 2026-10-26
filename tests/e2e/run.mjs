@@ -1022,6 +1022,52 @@ await step('메모: 고른 글에 넣고, 쪽에 표시하고, 읽고·고치고
   assert.equal(await editor((ed) => ed.doc.paraText({ sec: 0, para: 0, offset: 0 })), '회의 자료 초안입니다');
 });
 
+await step('편집 용지(F7): 크기·방향·제본·여백 일곱 가지를 mm로 바꾸고 잘못된 값은 막는다', async () => {
+  await newDoc();
+  await page.keyboard.type('편집 용지 시험');
+  await openTab('쪽');
+  await page.click('.panel-body .seg:has-text("여백·크기 자세히")');
+  await page.waitForSelector('.sheet.open .mm-grid');
+  assert.equal(await page.getAttribute('.sheet.open .chip-btn:has-text("A4")', 'aria-pressed'), 'true');
+  await page.click('.sheet.open .chip-btn:has-text("B5")');
+  assert.equal(await page.inputValue('.sheet.open input[aria-label="폭 (mm)"]'), '182');
+  await page.click('.sheet.open .chip-btn:has-text("가로")');
+  await page.click('.sheet.open .chip-btn:has-text("맞쪽")');
+  const fill = async (label, value) => page.fill(`.sheet.open input[aria-label="${label} (mm)"]`, value);
+  await fill('위쪽', '12');
+  await fill('머리말', '8');
+  await fill('왼쪽', '22.5');
+  await fill('제본', '10');
+  await fill('아래쪽', '14');
+  await fill('꼬리말', '9');
+  await fill('오른쪽', '18');
+  await page.waitForSelector('.sheet.open .page-summary:has-text("글 쓰는 자리")');
+  // 여백이 너무 크면 적용할 수 없다.
+  await fill('왼쪽', '300');
+  await page.waitForSelector('.sheet.open .page-summary.error');
+  assert.equal(await page.isDisabled('.sheet.open .primary-btn:has-text("적용")'), true);
+  await fill('왼쪽', '22.5');
+  await page.click('.sheet.open .primary-btn:has-text("적용")');
+  await page.waitForSelector('.toast-host:has-text("편집 용지를 바꿨어요")');
+  const def = await editor((ed) => JSON.parse(ed.doc.raw.getPageDef(0)));
+  const mmOf = (v) => Math.round((v / 283.465) * 10) / 10;
+  assert.deepEqual(
+    [def.width, def.height, def.marginTop, def.marginHeader, def.marginLeft, def.marginGutter, def.marginBottom, def.marginFooter, def.marginRight].map(mmOf),
+    [182, 257, 12, 8, 22.5, 10, 14, 9, 18],
+  );
+  assert.equal(def.landscape, true);
+  assert.equal(def.binding, 1);
+  // 실행 취소로 되돌린다.
+  await page.click('[aria-label="실행 취소"]');
+  assert.equal(await editor((ed) => JSON.parse(ed.doc.raw.getPageDef(0)).landscape), false);
+  // 하드웨어 키보드의 F7로도 연다.
+  await page.click('.qb.qb-kb');
+  await page.keyboard.press('F7');
+  await page.waitForSelector('.sheet.open .mm-grid');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+});
+
 await step('페이지 오류가 없다', async () => {
   assert.deepEqual(errors, []);
 });

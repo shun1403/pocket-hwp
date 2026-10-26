@@ -811,6 +811,8 @@ export class Editor {
   // ───────────── 키보드 (하드웨어 키보드·데스크톱) ─────────────
 
   private onKey(e: KeyboardEvent): boolean {
+    // 한글과 같은 기능 키 (F7 편집 용지)
+    if (e.key === 'F7') return this.hostApi.shortcut('F7');
     const mod = e.ctrlKey || e.metaKey;
     if (mod) {
       const k = e.key.toLowerCase();

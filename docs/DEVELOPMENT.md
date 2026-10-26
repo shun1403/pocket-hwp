@@ -149,6 +149,9 @@ rhwp의 글자 위치(charOffset)에는 개체(각주·수식·그림 등)가 �
 - 캡션(`attachCaptionAt`)은 그리기 개체(도형·글상자)에만 붙는다.
 - 차트 값은 `getChartData`가 주는 모양(`labels`, `series[{name, values}]`) 그대로 `setChartData`에 넘긴다.
   엔진은 HWPX 차트 XML과 HWP용 OLE 사본을 함께 고칠 수 없으면 아무것도 쓰지 않고 `invalid` 이유를 돌려준다.
+- 편집 용지(`setPageDef`)의 폭·길이는 세로 기준 값이고 `landscape`가 방향을 바꾼다. `binding` 0 한쪽·1 맞쪽·2 위로.
+  맞쪽은 짝수 쪽에서 `bindingMirrored`로 여백이 뒤집히지만, 위로(2)는 엔진이 아직 그릴 때 반영하지 않는다.
+  `breakAtCursor(…, 'section')`은 ok를 돌려주지만 구역 수가 늘지 않아 "새 구역으로 적용"은 넣지 않았다.
 - 머리말·꼬리말·각주는 캐럿으로 직접 고치지 않고, 누르면 여러 줄 입력 시트로 고친다(`doc/ops/notes.ts`).
   바뀌지 않은 줄은 건드리지 않아서 그 줄의 쪽 번호 필드·글자 모양이 남는다.
 - 붙여넣기는 클립보드에 HTML이 있으면 `pasteHtml`로 모양째 넣고, 엔진이 읽지 못하면 글자만 넣는다.

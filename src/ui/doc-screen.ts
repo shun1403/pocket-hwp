@@ -20,6 +20,7 @@ import {
   openOutlineSheet,
   openShapeSheet,
 } from './doc-tools';
+import { openPageSetupSheet } from './panel/page-setup-sheet';
 import { maybeShowEditTips, openTips } from './tips';
 import { h, keepFocus } from './dom';
 import { icon } from './icons';
@@ -87,6 +88,10 @@ export class DocScreen {
         }
         if (k === 'f') {
           this.openSearch();
+          return true;
+        }
+        if (k === 'F7') {
+          openPageSetupSheet(this.editor);
           return true;
         }
         return false;
