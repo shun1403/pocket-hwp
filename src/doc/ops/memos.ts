@@ -211,13 +211,19 @@ function memoParagraphs(text: string): string {
 const SUBLIST_OPEN =
   '<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">';
 
+/** 메모 작성자 이름: 한글 메모 명령의 구분 글자(/ \ ;)와 줄바꿈을 빼고, 비면 '사용자' */
+export function memoAuthor(name: string): string {
+  return name.replace(/[/\\;\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) || '사용자';
+}
+
 /** 한글이 쓰는 모양 그대로의 메모 fieldBegin */
 function memoBegin(id: number, number: number, text: string, author: string, now: Date): string {
   // Command 의 두 수는 만든 때의 FILETIME(100ns, 1601년부터) 아래·위 32비트다.
   const filetime = BigInt(now.getTime() + 11644473600000) * 10000n;
   const low = Number(filetime & 0xffffffffn);
   const high = Number(filetime >> 32n);
-  const who = escapeXml(author);
+  // Command 는 '/' 와 ';' 로 칸을 나누므로 이름에서 그 글자를 뺀다 (한글이 메모 정보를 잘못 읽지 않게).
+  const who = escapeXml(memoAuthor(author));
   const created = now.toISOString().replace(/\.\d{3}Z$/, 'Z');
   return (
     `<hp:fieldBegin id="${id}" type="MEMO" name="" editable="1" dirty="1" zorder="${number}" fieldid="${MEMO_FIELD_ID}">` +
