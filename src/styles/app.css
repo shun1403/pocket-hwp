@@ -680,6 +680,13 @@ input:focus-visible {
   z-index: 3;
 }
 
+/* 문서에 넣어 둔 조합 중 글: 실제 모양 위에 밑줄만 긋는다. */
+.composing-range {
+  border-bottom: 2px solid var(--brand);
+  background: rgb(47 94 232 / 0.08);
+  pointer-events: none;
+}
+
 .composition > span {
   background: rgb(255 236 150 / 0.9);
   border-bottom: 2px solid var(--brand);

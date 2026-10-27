@@ -70,6 +70,8 @@ export class Editor {
   private readonly overlay: Overlay;
   private doc: EditableDocument | null = null;
   private history: History | null = null;
+  /** 조합 중이라 문서에 넣어 둔 글의 자리 (확정 전) */
+  private live: { start: DocPos; end: DocPos } | null = null;
   /** 쪽 위에 표시한 메모 자리 */
   private memoMarks: { id: number; rects: PageRect[] }[] = [];
   private mode: EditorMode = 'view';
@@ -118,6 +120,7 @@ export class Editor {
 
   load(doc: EditableDocument): void {
     this.history?.reset();
+    this.live = null;
     this.doc = doc;
     this.history = new History(doc.raw, Math.max(4, Math.min(40, doc.raw.snapshotCapacity() - 2)));
     this.caret = null;
@@ -136,6 +139,7 @@ export class Editor {
   replaceDocument(bytes: Uint8Array): void {
     const doc = this.doc;
     if (!doc) return;
+    this.settleComposition();
     this.input.commitComposition();
     const next = new HwpDocument(bytes);
     this.history?.reset();
@@ -452,7 +456,7 @@ export class Editor {
       this.overlay.showCaret(editing ? rect : null, true, editing && this.caretHandle);
     }
     this.overlay.showObject(this.object);
-    this.overlay.drawHighlight();
+    this.overlay.setComposing(this.live ? doc.selectionRects(this.live.start, this.live.end) : []);
     if (rect) {
       if (reveal) this.view.reveal(rect.pageIndex, rect.x, rect.y, rect.height);
       this.syncInputPosition(rect);
@@ -500,16 +504,56 @@ export class Editor {
     this.hostApi.selectionMenu({ x, top, bottom });
   }
 
+  /**
+   * 조합 중인 글. 실제 글꼴·크기·자간·줄 간격 그대로 보이도록 문서에 바로 넣어 두고(실행 취소 기록 없이)
+   * 밑줄로 표시한다. 조합이 끝나면(text 가 null) 넣어 둔 글을 빼고, 확정된 글을 평소처럼 넣는다.
+   */
   private showComposition(text: string | null): void {
     if (!this.caret || !this.doc) return;
-    if (text && this.selection) {
+    if (text && this.selection && !this.live) {
       // 선택 영역 위에서 조합을 시작하면 선택 영역을 먼저 지운다.
       this.edit('type', () => this.doc!.deleteRange(...this.selection!));
     }
+    // 보기로 바뀌는 중에도 넣어 둔 글은 반드시 뺀다.
+    if ((this.live || (text && this.mode === 'edit')) && this.showLive(text)) return;
     const rect = this.caretRect(this.caret);
     const fontPt = (this.pendingChar?.fontSize ?? this.doc.charProps(this.caret).fontSize ?? 1000) / 100;
     this.overlay.showComposition(text, rect, (fontPt * 96) / 72, text && rect ? this.textBounds(rect) : null);
     this.overlay.showCaret(text ? null : rect, !text);
+  }
+
+  /** 조합 중인 글을 문서에 넣어 둔다. 엔진이 넣지 못하면 false (떠 있는 미리보기로 대신한다). */
+  private showLive(text: string | null): boolean {
+    const doc = this.doc!;
+    try {
+      const at = this.live ? (samePos(this.live.start, this.live.end) ? this.live.start : doc.deleteRange(this.live.start, this.live.end)) : this.caret!;
+      this.live = null;
+      this.caret = at;
+      if (text) {
+        const end = doc.insertText(at, text);
+        if (this.pendingChar && innerPara(at) === innerPara(end)) doc.applyCharProps(at, end, this.pendingChar);
+        this.live = { start: at, end };
+        this.caret = end;
+      }
+    } catch (err) {
+      console.warn('live composition failed', err);
+      this.live = null;
+      return false;
+    }
+    this.overlay.showComposition(null, null, 0);
+    const rect = this.caretRect(this.caret!);
+    this.view.refresh(rect?.pageIndex ?? -1);
+    this.refreshMemos();
+    this.paint(true);
+    return true;
+  }
+
+  /** 조합 중이면 먼저 확정한다 (조합 글이 든 채로 실행 취소 기록이 남지 않게). */
+  private settleComposition(): void {
+    if (!this.live) return;
+    this.input.commitComposition();
+    // 키보드가 조합 끝을 알리지 않았으면 넣어 둔 글만 뺀다.
+    if (this.live) this.showLive(null);
   }
 
   /** 캐럿 자리에서 글이 놓이는 가로 범위 (쪽 px): 표 칸이면 그 칸, 본문이면 그 단 */
@@ -555,6 +599,7 @@ export class Editor {
 
   /** 모든 문서 변경은 여기를 거친다: 실행 취소 기록 → 변경 → 다시 그리기. */
   private edit(group: string | null, fn: () => DocPos): boolean {
+    this.settleComposition();
     const doc = this.doc;
     if (!doc || !this.caret || !this.history) return false;
     this.history.record(this.caret, group);
@@ -636,10 +681,12 @@ export class Editor {
   }
 
   undo(): void {
+    this.settleComposition();
     this.restore(this.history?.undo(this.caret ?? { sec: 0, para: 0, offset: 0 }) ?? null);
   }
 
   redo(): void {
+    this.settleComposition();
     this.restore(this.history?.redo(this.caret ?? { sec: 0, para: 0, offset: 0 }) ?? null);
   }
 
@@ -733,6 +780,7 @@ export class Editor {
    * fn 이 새 캐럿 위치를 돌려주면 그리로 옮기고, 돌려주지 않으면 캐럿·선택을 그대로 둔다.
    */
   command(fn: (doc: EditableDocument, caret: DocPos, selection: [DocPos, DocPos] | null) => DocPos | void): boolean {
+    this.settleComposition();
     if (!this.caret || !this.doc) return false;
     const keep = { anchor: this.anchor, caret: this.caret };
     const sel = this.selection;
