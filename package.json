@@ -12,7 +12,7 @@
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "node tests/e2e/run.mjs",
+    "test:e2e": "node tests/e2e/run.mjs && node tests/e2e/prod.mjs",
     "cap:sync": "pnpm run build && cap sync",
     "android": "pnpm run cap:sync && cap open android",
     "ios": "pnpm run cap:sync && cap open ios"

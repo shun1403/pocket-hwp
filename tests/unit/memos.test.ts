@@ -1,7 +1,7 @@
 import { HwpDocument } from '@rhwp/core';
 import { describe, expect, it } from 'vitest';
 import { EditableDocument } from '../../src/doc/editable';
-import { addMemo, deleteMemo, editMemo, elementEnd, hasMemos, memoCount, memoRanges, readMemos } from '../../src/doc/ops/memos';
+import { addMemo, deleteMemo, editMemo, elementEnd, hasMemos, memoAuthor, memoCount, memoRanges, readMemos } from '../../src/doc/ops/memos';
 import { readZip } from '../../src/export/zip';
 import { exportDocument } from '../../src/export/exporters';
 import { blankDocument } from './engine';
@@ -81,6 +81,16 @@ describe('메모', () => {
     expect((await readMemos(again))[0].text).toBe('남아야 해요');
     expect(exportDocument(memoDoc.raw, 'hwp').lossWarnings.join(' ')).toContain('메모');
     expect(exportDocument(memoDoc.raw, 'hwpx').lossWarnings).toEqual([]);
+  });
+
+  it('작성자 이름에서 한글 메모 명령의 구분 글자를 뺀다', async () => {
+    expect(memoAuthor('홍길동/기획팀;과장')).toBe('홍길동 기획팀 과장');
+    expect(memoAuthor('  \\ ; ')).toBe('사용자');
+    const doc = await blankDocument();
+    doc.raw.insertText(0, 0, 0, '본문');
+    const memoDoc = reopen(await addMemo(doc, at(0), at(2), '내용', 'a/b;c'));
+    expect((await readMemos(memoDoc))[0].author).toBe('a b c');
+    expect(await sectionXml(memoDoc)).toMatch(/MEMO\/65535\/1\/\d+\/\d+\/a b c\/\\;;/);
   });
 
   it('겹친 요소의 끝을 짝 맞춰 찾는다', () => {
