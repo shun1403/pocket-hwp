@@ -94,23 +94,42 @@ await step('영문 입력과 한글 조합 입력이 문서에 들어간다', as
   assert.equal(await paraText(), 'Pocket 한글');
 });
 
-await step('조합 중에는 캐럿 자리에 미리보기를 보여 준다', async () => {
+await step('조합 중인 글은 실제 모양 그대로 문서에 보이고, 확정하거나 지우면 정리된다', async () => {
   await cdp.send('Input.imeSetComposition', { text: '무', selectionStart: 1, selectionEnd: 1 });
-  assert.equal(await page.textContent('.composition'), '무');
-  // 단어를 통째로 조합하는 키보드: 긴 조합도 쪽 밖으로 넘치지 않고 본문 폭 안에서 줄을 바꾼다.
+  // 떠 있는 미리보기가 아니라 문서에 바로 들어가 실제 글꼴·크기·줄 간격으로 그려진다.
+  await page.waitForFunction(async () => document.querySelector('.composing-range'));
+  assert.equal(await paraText(), 'Pocket 한글무');
+  assert.equal(await page.$('.composition'), null);
+  // 단어를 통째로 조합하는 키보드: 긴 조합도 문서 줄바꿈 그대로 쪽 안에서 줄을 바꾼다.
   const long = '가나다라마바사아자차카타파하'.repeat(4);
   await cdp.send('Input.imeSetComposition', { text: long, selectionStart: long.length, selectionEnd: long.length });
-  await page.waitForFunction((t) => document.querySelector('.composition')?.textContent === t, long);
-  const box = await page.locator('.composition > span').evaluate((el) => {
-    const rects = [...el.getClientRects()];
-    const pg = el.closest('.page').getBoundingClientRect();
+  assert.equal(await paraText(), `Pocket 한글${long}`);
+  const box = await page.evaluate(() => {
+    const rects = [...document.querySelectorAll('.composing-range')].map((el) => el.getBoundingClientRect());
+    const pg = document.querySelector('.composing-range').closest('.page').getBoundingClientRect();
     return { lines: rects.length, right: Math.max(...rects.map((r) => r.right)), pageRight: pg.right };
   });
   assert.ok(box.lines > 1, `줄 바꿈 (${box.lines}줄)`);
   assert.ok(box.right <= box.pageRight, `쪽 안 (${box.right} ≤ ${box.pageRight})`);
+  // 조합을 비우고 끝내면 넣어 둔 글이 빠진다.
   await cdp.send('Input.imeSetComposition', { text: '무', selectionStart: 1, selectionEnd: 1 });
   await cdp.send('Input.insertText', { text: '' });
-  await page.waitForFunction(() => !document.querySelector('.composition'));
+  await page.waitForFunction(() => !document.querySelector('.composing-range'));
+  assert.equal(await paraText(), 'Pocket 한글');
+  // 확정하면 한 번만 들어간다.
+  await compose(['ㅁ', '무'], '무');
+  assert.equal(await paraText(), 'Pocket 한글무');
+  await page.keyboard.press('Backspace');
+  assert.equal(await paraText(), 'Pocket 한글');
+  // 조합 중에 실행 취소하면 조합 글을 확정한 뒤 되돌린다 (넣어 둔 글이 남거나 엉뚱한 글이 지워지지 않는다).
+  await cdp.send('Input.imeSetComposition', { text: '하', selectionStart: 1, selectionEnd: 1 });
+  assert.equal(await paraText(), 'Pocket 한글하');
+  await editor((ed) => ed.undo());
+  await page.waitForFunction(() => !document.querySelector('.composing-range'));
+  assert.equal(await paraText(), 'Pocket 한글');
+  await editor((ed) => ed.redo());
+  assert.equal(await paraText(), 'Pocket 한글하');
+  await page.keyboard.press('Backspace');
   assert.equal(await paraText(), 'Pocket 한글');
 });
 

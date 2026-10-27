@@ -20,6 +20,7 @@ export class Overlay {
   private selection: HTMLDivElement[] = [];
   private highlight: { rects: PageRect[]; els: HTMLDivElement[] } = { rects: [], els: [] };
   private marks: { rects: PageRect[]; els: HTMLDivElement[] } = { rects: [], els: [] };
+  private composing: { rects: PageRect[]; els: HTMLDivElement[] } = { rects: [], els: [] };
 
   constructor(private readonly view: PageView) {
     this.caret.className = 'caret';
@@ -105,6 +106,12 @@ export class Overlay {
     this.drawHighlight();
   }
 
+  /** 문서에 넣어 둔 조합 중 글의 밑줄. 빈 배열이면 지운다. */
+  setComposing(rects: PageRect[]): void {
+    this.composing.rects = rects;
+    this.drawHighlight();
+  }
+
   /** 메모를 단 글 표시. 빈 배열이면 지운다. */
   setMarks(rects: PageRect[]): void {
     this.marks.rects = rects;
@@ -116,6 +123,7 @@ export class Overlay {
     for (const [layer, cls] of [
       [this.highlight, 'range-rect'],
       [this.marks, 'memo-mark'],
+      [this.composing, 'composing-range'],
     ] as const) {
       layer.els.forEach((el) => el.remove());
       layer.els = [];
