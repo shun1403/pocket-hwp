@@ -1,6 +1,9 @@
 import type { HwpDocument } from '../engine/rhwp';
 import type { DocFormat } from '../platform/bytes';
 import { buildImagePdf, type PdfImagePage } from './pdf';
+import { hasMemos } from '../doc/ops/memos';
+
+export const MEMO_LOSS = '메모는 한글 문서(.hwp)에 담기지 않아요. 메모를 남기려면 HWPX(.hwpx)로 저장해 주세요.';
 
 export interface ExportResult {
   bytes: Uint8Array;
@@ -39,6 +42,8 @@ export function exportDocument(doc: HwpDocument, format: DocFormat, password?: s
       : doc.exportHwpWithReport();
   try {
     const lossWarnings = readLoss(result.contentLoss());
+    // 엔진은 HWP(5.0)로 저장할 때 메모를 지키지 못한다.
+    if (format === 'hwp' && hasMemos(doc)) lossWarnings.push(MEMO_LOSS);
     return { bytes: result.takeBytes(), lossWarnings };
   } finally {
     result.free();

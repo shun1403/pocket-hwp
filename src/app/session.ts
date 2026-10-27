@@ -1,4 +1,5 @@
 import { EditableDocument } from '../doc/editable';
+import { hasMemos } from '../doc/ops/memos';
 import { HwpDocument, initEngine } from '../engine/rhwp';
 import { exportDocument, renderThumbnail } from '../export/exporters';
 import { type DocFormat, baseName, detectFormat } from '../platform/bytes';
@@ -176,11 +177,13 @@ export class DocumentSession {
     this.saving = (async () => {
       this.dirty = false;
       // 보관본은 rhwp가 가장 안정적으로 다루는 HWP 5.0으로 둔다.
-      const { bytes } = exportDocument(this.doc.raw, 'hwp', this.password);
+      // 다만 엔진은 HWP로 저장할 때 메모를 지키지 못하므로 메모가 있으면 HWPX로 둔다.
+      const format: DocFormat = hasMemos(this.doc.raw) ? 'hwpx' : 'hwp';
+      const { bytes } = exportDocument(this.doc.raw, format, this.password);
       this.entry = {
         ...this.entry,
-        format: 'hwp',
-        name: `${baseName(this.entry.name)}.hwp`,
+        format,
+        name: `${baseName(this.entry.name)}.${format}`,
         size: bytes.length,
         pages: this.doc.pageCount(),
         updatedAt: Date.now(),
@@ -226,7 +229,8 @@ export class DocumentSession {
   }
 
   async rename(name: string): Promise<void> {
-    const ext = this.entry.format === 'hwpx' && !this.entry.edited ? '.hwpx' : '.hwp';
+    // 보관본의 형식을 따른다 (고친 문서는 HWP, 메모가 있으면 HWPX).
+    const ext = this.entry.format === 'hwpx' ? '.hwpx' : '.hwp';
     const clean = baseName(name.trim()) || baseName(this.entry.name);
     this.entry = { ...this.entry, name: `${clean}${ext}` };
     const stored = await library.get(this.entry.id);

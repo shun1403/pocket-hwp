@@ -97,6 +97,18 @@ await step('영문 입력과 한글 조합 입력이 문서에 들어간다', as
 await step('조합 중에는 캐럿 자리에 미리보기를 보여 준다', async () => {
   await cdp.send('Input.imeSetComposition', { text: '무', selectionStart: 1, selectionEnd: 1 });
   assert.equal(await page.textContent('.composition'), '무');
+  // 단어를 통째로 조합하는 키보드: 긴 조합도 쪽 밖으로 넘치지 않고 본문 폭 안에서 줄을 바꾼다.
+  const long = '가나다라마바사아자차카타파하'.repeat(4);
+  await cdp.send('Input.imeSetComposition', { text: long, selectionStart: long.length, selectionEnd: long.length });
+  await page.waitForFunction((t) => document.querySelector('.composition')?.textContent === t, long);
+  const box = await page.locator('.composition > span').evaluate((el) => {
+    const rects = [...el.getClientRects()];
+    const pg = el.closest('.page').getBoundingClientRect();
+    return { lines: rects.length, right: Math.max(...rects.map((r) => r.right)), pageRight: pg.right };
+  });
+  assert.ok(box.lines > 1, `줄 바꿈 (${box.lines}줄)`);
+  assert.ok(box.right <= box.pageRight, `쪽 안 (${box.right} ≤ ${box.pageRight})`);
+  await cdp.send('Input.imeSetComposition', { text: '무', selectionStart: 1, selectionEnd: 1 });
   await cdp.send('Input.insertText', { text: '' });
   await page.waitForFunction(() => !document.querySelector('.composition'));
   assert.equal(await paraText(), 'Pocket 한글');
@@ -954,6 +966,106 @@ await step('차트: 값을 표로 보여 주고, 엔진이 못 바꾸면 이유�
   await page.waitForSelector('.toast-host:has-text("차트를 바꾸지 못했어요")');
   assert.ok(await page.$('.sheet.open .chart-table'));
   await page.goBack();
+});
+
+await step('메모: 고른 글에 넣고, 쪽에 표시하고, 읽고·고치고·지운다', async () => {
+  await newDoc();
+  await page.keyboard.type('회의 자료 초안입니다');
+  await editor((ed) => ed.select({ sec: 0, para: 0, offset: 0 }, { sec: 0, para: 0, offset: 5 }));
+  await openTab('입력');
+  await page.click('.tile[aria-label="메모"]');
+  await page.waitForSelector('.sheet.open .dialog-message:has-text("“회의 자료”에 메모를 달아요")');
+  await page.fill('.sheet.open textarea.text-field', '숫자 다시 확인\n금요일까지');
+  await page.fill('.sheet.open input.text-field', '홍길동');
+  await page.click('.sheet.open .dialog-form button[type="submit"]');
+  await page.waitForSelector('.toast-host:has-text("메모를 넣었어요")');
+  await page.waitForSelector('.memo-mark');
+  assert.equal(await editor((ed) => ed.doc.paraText({ sec: 0, para: 0, offset: 0 })), '회의 자료 초안입니다', '본문은 그대로');
+  // 메모가 지워지지 않게 HWPX로 저장한다.
+  await page.waitForFunction(() => document.querySelector('.app-title')?.textContent?.endsWith('.hwpx'));
+
+  // 캐럿이 메모 위에 있으면 그 메모를 고친다.
+  await editor((ed) => ed.select({ sec: 0, para: 0, offset: 2 }, { sec: 0, para: 0, offset: 2 }));
+  await page.click('.tile[aria-label="메모"]');
+  await page.waitForSelector('.sheet.open .dialog-message:has-text("홍길동")');
+  assert.equal(await page.inputValue('.sheet.open textarea.text-field'), '숫자 다시 확인\n금요일까지');
+  await page.fill('.sheet.open textarea.text-field', '고친 메모');
+  await page.click('.sheet.open .dialog-form button[type="submit"]');
+  await page.waitForSelector('.toast-host:has-text("메모를 고쳤어요")');
+
+  // 보기 모드: 메모 단 글을 누르면 메모를 읽는다.
+  await page.click('.done-btn');
+  await page.waitForTimeout(400); // 보기 배율로 돌아가는 동안 표시가 다시 그려진다.
+  const mark = await page.evaluate(() => {
+    const r = document.querySelector('.memo-mark').getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  });
+  await page.touchscreen.tap(mark.x + mark.width / 2, mark.y + mark.height / 2);
+  await page.waitForSelector('.sheet.open .memo-body:has-text("고친 메모")');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+  await page.click('[aria-label="더보기"]');
+  await page.click('.sheet.open .sheet-row:has-text("메모")');
+  await page.waitForSelector('.sheet.open .memo-card:has-text("고친 메모"):has-text("회의 자료")');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+
+  // 지우면 글은 남고 표시는 사라진다.
+  await page.click('[aria-label="편집하기"]');
+  await editor((ed) => ed.select({ sec: 0, para: 0, offset: 1 }, { sec: 0, para: 0, offset: 1 }));
+  await openTab('입력');
+  await page.click('.tile[aria-label="메모"]');
+  await page.click('.sheet.open .secondary-btn.danger:has-text("메모 지우기")');
+  await page.click('.sheet.open .primary-btn:has-text("지우기")');
+  await page.waitForSelector('.toast-host:has-text("메모를 지웠어요")');
+  await page.waitForFunction(() => !document.querySelector('.memo-mark'));
+  assert.equal(await editor((ed) => ed.doc.paraText({ sec: 0, para: 0, offset: 0 })), '회의 자료 초안입니다');
+});
+
+await step('편집 용지(F7): 크기·방향·제본·여백 일곱 가지를 mm로 바꾸고 잘못된 값은 막는다', async () => {
+  await newDoc();
+  await page.keyboard.type('편집 용지 시험');
+  await openTab('쪽');
+  await page.click('.panel-body .seg:has-text("여백·크기 자세히")');
+  await page.waitForSelector('.sheet.open .mm-grid');
+  assert.equal(await page.getAttribute('.sheet.open .chip-btn:has-text("A4")', 'aria-pressed'), 'true');
+  await page.click('.sheet.open .chip-btn:has-text("B5")');
+  assert.equal(await page.inputValue('.sheet.open input[aria-label="폭 (mm)"]'), '182');
+  await page.click('.sheet.open .chip-btn:has-text("가로")');
+  await page.click('.sheet.open .chip-btn:has-text("맞쪽")');
+  const fill = async (label, value) => page.fill(`.sheet.open input[aria-label="${label} (mm)"]`, value);
+  await fill('위쪽', '12');
+  await fill('머리말', '8');
+  await fill('왼쪽', '22.5');
+  await fill('제본', '10');
+  await fill('아래쪽', '14');
+  await fill('꼬리말', '9');
+  await fill('오른쪽', '18');
+  await page.waitForSelector('.sheet.open .page-summary:has-text("글 쓰는 자리")');
+  // 여백이 너무 크면 적용할 수 없다.
+  await fill('왼쪽', '300');
+  await page.waitForSelector('.sheet.open .page-summary.error');
+  assert.equal(await page.isDisabled('.sheet.open .primary-btn:has-text("적용")'), true);
+  await fill('왼쪽', '22.5');
+  await page.click('.sheet.open .primary-btn:has-text("적용")');
+  await page.waitForSelector('.toast-host:has-text("편집 용지를 바꿨어요")');
+  const def = await editor((ed) => JSON.parse(ed.doc.raw.getPageDef(0)));
+  const mmOf = (v) => Math.round((v / 283.465) * 10) / 10;
+  assert.deepEqual(
+    [def.width, def.height, def.marginTop, def.marginHeader, def.marginLeft, def.marginGutter, def.marginBottom, def.marginFooter, def.marginRight].map(mmOf),
+    [182, 257, 12, 8, 22.5, 10, 14, 9, 18],
+  );
+  assert.equal(def.landscape, true);
+  assert.equal(def.binding, 1);
+  // 실행 취소로 되돌린다.
+  await page.click('[aria-label="실행 취소"]');
+  assert.equal(await editor((ed) => JSON.parse(ed.doc.raw.getPageDef(0)).landscape), false);
+  // 하드웨어 키보드의 F7로도 연다.
+  await page.click('.qb.qb-kb');
+  await page.keyboard.press('F7');
+  await page.waitForSelector('.sheet.open .mm-grid');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
 });
 
 await step('페이지 오류가 없다', async () => {

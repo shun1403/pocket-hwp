@@ -17,12 +17,49 @@ export interface PageDef {
   binding: number;
 }
 
+/** HWPUNIT → mm (소수 한 자리) */
+export const toMm = (v: number) => Math.round((v / 283.465) * 10) / 10;
+
+/** 한글 편집 용지(F7)의 용지 종류. B4·B5는 한글과 같은 46배판 크기다. */
 export const PAPERS = [
   { id: 'A4', label: 'A4', width: mm(210), height: mm(297) },
   { id: 'A3', label: 'A3', width: mm(297), height: mm(420) },
+  { id: 'A5', label: 'A5', width: mm(148), height: mm(210) },
+  { id: 'B4', label: 'B4', width: mm(257), height: mm(364) },
   { id: 'B5', label: 'B5', width: mm(182), height: mm(257) },
   { id: 'Letter', label: 'Letter', width: 61200, height: 79200 },
+  { id: 'Legal', label: 'Legal', width: 61200, height: 100800 },
+  { id: 'Shinguk', label: '신국판', width: mm(152), height: mm(225) },
 ] as const;
+
+/** 제본: 0 한쪽(왼쪽), 1 맞쪽(홀짝 쪽이 거울처럼), 2 위로 넘기기 */
+export const BINDINGS = [
+  { id: 0, label: '한쪽' },
+  { id: 1, label: '맞쪽' },
+  { id: 2, label: '위로' },
+] as const;
+
+/** 여백을 뺀 본문 크기 (HWPUNIT). 가로 방향이면 폭·길이를 바꿔 잰다. */
+export function bodySize(def: PageDef): { width: number; height: number } {
+  const w = def.landscape ? def.height : def.width;
+  const hgt = def.landscape ? def.width : def.height;
+  const sideGutter = def.binding === 2 ? 0 : def.marginGutter;
+  const topGutter = def.binding === 2 ? def.marginGutter : 0;
+  return {
+    width: w - def.marginLeft - def.marginRight - sideGutter,
+    height: hgt - def.marginTop - def.marginBottom - def.marginHeader - def.marginFooter - topGutter,
+  };
+}
+
+/** 편집 용지 값이 맞지 않으면 사람이 읽을 이유, 맞으면 null */
+export function pageSetupError(def: PageDef): string | null {
+  const values = [def.width, def.height, def.marginLeft, def.marginRight, def.marginTop, def.marginBottom, def.marginHeader, def.marginFooter, def.marginGutter];
+  if (values.some((v) => !Number.isFinite(v) || v < 0)) return '숫자를 바르게 넣어 주세요.';
+  if (def.width < mm(30) || def.height < mm(30) || def.width > mm(1500) || def.height > mm(1500)) return '용지 폭과 길이는 30~1500mm 사이로 넣어 주세요.';
+  const body = bodySize(def);
+  if (body.width < mm(10) || body.height < mm(10)) return '여백이 너무 커서 글을 쓸 자리가 없어요. 여백을 줄여 주세요.';
+  return null;
+}
 
 export const MARGINS = [
   { id: 'narrow', label: '좁게', side: mm(15), top: mm(15), bottom: mm(15), hf: mm(10) },

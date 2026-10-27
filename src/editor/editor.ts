@@ -5,6 +5,7 @@ import {
   type CaretRect,
   type DocPos,
   type PageRect,
+  inCell,
   innerPara,
   orderRange,
   sameContainer,
@@ -14,7 +15,10 @@ import {
 } from '../doc/position';
 import { type LinkInfo, linkAt } from '../doc/ops/links';
 import { type SpecialHit, specialAt } from '../doc/ops/notes';
+import { memoCount, memoRanges } from '../doc/ops/memos';
 import { type PageObject, objectAt } from '../doc/ops/objects';
+import { cellContext, tableCells } from '../doc/ops/table';
+import { HwpDocument } from '../engine/rhwp';
 import { haptic } from '../platform/files';
 import { attachGestures } from '../view/gestures';
 import { PageView } from '../view/page-view';
@@ -50,6 +54,8 @@ export interface EditorHost {
   special(hit: SpecialHit): void;
   /** 링크를 눌렀다 */
   link(pos: DocPos, link: LinkInfo): void;
+  /** 보기 중 메모를 단 글을 눌렀다 */
+  memo(id: number): void;
 }
 
 type Move = 'left' | 'right' | 'up' | 'down' | 'home' | 'end';
@@ -64,6 +70,8 @@ export class Editor {
   private readonly overlay: Overlay;
   private doc: EditableDocument | null = null;
   private history: History | null = null;
+  /** 쪽 위에 표시한 메모 자리 */
+  private memoMarks: { id: number; rects: PageRect[] }[] = [];
   private mode: EditorMode = 'view';
   private caret: DocPos | null = null;
   private anchor: DocPos | null = null;
@@ -116,7 +124,62 @@ export class Editor {
     this.anchor = null;
     this.overlay.clear();
     this.view.setDocument(doc);
+    this.memoMarks = [];
+    this.refreshMemos(memoCount(doc) > 0);
     this.setMode('view');
+  }
+
+  /**
+   * 엔진 밖에서 고친 문서(메모를 단 HWPX)로 통째로 바꾼다. 글 위치는 그대로라 캐럿을 지킨다.
+   * 엔진 스냅샷은 문서마다 따로라서 실행 취소 기록은 비워진다.
+   */
+  replaceDocument(bytes: Uint8Array): void {
+    const doc = this.doc;
+    if (!doc) return;
+    this.input.commitComposition();
+    const next = new HwpDocument(bytes);
+    this.history?.reset();
+    doc.replaceRaw(next);
+    this.history = new History(next, Math.max(4, Math.min(40, next.snapshotCapacity() - 2)));
+    this.object = null;
+    this.anchor = null;
+    const rect = this.caret ? this.caretRect(this.caret) : null;
+    this.view.refresh(rect?.pageIndex ?? -1);
+    this.refreshMemos(true);
+    this.paint(false);
+    this.hostApi.changed();
+  }
+
+  /** 메모 자리 표시를 다시 계산한다. 메모가 없던 문서는 편집해도 생기지 않으니 건너뛴다. */
+  private refreshMemos(force = false): void {
+    const doc = this.doc;
+    if (!doc || (!force && this.memoMarks.length === 0)) return;
+    this.memoMarks = memoRanges(doc).map((m) => {
+      if (m.start.offset !== m.end.offset || innerPara(m.start) !== innerPara(m.end)) return { id: m.id, rects: doc.selectionRects(m.start, m.end) };
+      const r = doc.caretRect(m.start);
+      return { id: m.id, rects: r ? [{ pageIndex: r.pageIndex, x: r.x - 2, y: r.y, width: 8, height: r.height }] : [] };
+    });
+    this.overlay.setMarks(this.memoMarks.flatMap((m) => m.rects));
+  }
+
+  /** 점 근처에 있는 메모 (손가락으로 누르기 쉽게 둘레를 넓혀 잡는다) */
+  private memoAtPoint(clientX: number, clientY: number): number | null {
+    const p = this.view.clientToPage(clientX, clientY);
+    if (!p) return null;
+    const pad = 8 / this.view.zoom;
+    const hit = this.memoMarks.find((m) => m.rects.some((r) => r.pageIndex === p.page && p.x >= r.x - pad && p.x <= r.x + r.width + pad && p.y >= r.y - pad && p.y <= r.y + r.height + pad));
+    return hit?.id ?? null;
+  }
+
+  /** 캐럿(또는 선택)이 걸친 메모 */
+  memoAtCaret(): number | null {
+    const doc = this.doc;
+    const caret = this.caret;
+    if (!doc || !caret) return null;
+    const hit = memoRanges(doc).find(
+      (m) => sameContainer(m.start, caret) && innerPara(m.start) === innerPara(caret) && m.start.offset <= caret.offset && caret.offset <= m.end.offset,
+    );
+    return hit?.id ?? null;
   }
 
   setMode(mode: EditorMode): void {
@@ -145,7 +208,10 @@ export class Editor {
       // 두 번 탭(확대)과 구분하려고 잠깐 기다린다. 링크 위면 링크를 연다.
       window.clearTimeout(this.viewTapTimer);
       this.viewTapTimer = window.setTimeout(() => {
-        if (!this.openLinkAt(x, y)) this.hostApi.toggleChrome();
+        if (this.openLinkAt(x, y)) return;
+        const memo = this.memoAtPoint(x, y);
+        if (memo !== null) this.hostApi.memo(memo);
+        else this.hostApi.toggleChrome();
       }, 260);
       return;
     }
@@ -369,6 +435,7 @@ export class Editor {
     const doc = this.doc;
     if (!doc || !this.caret) {
       this.overlay.clear();
+      this.overlay.drawHighlight();
       this.hostApi.selectionMenu(null);
       this.emitState();
       return;
@@ -441,8 +508,31 @@ export class Editor {
     }
     const rect = this.caretRect(this.caret);
     const fontPt = (this.pendingChar?.fontSize ?? this.doc.charProps(this.caret).fontSize ?? 1000) / 100;
-    this.overlay.showComposition(text, rect, (fontPt * 96) / 72);
+    this.overlay.showComposition(text, rect, (fontPt * 96) / 72, text && rect ? this.textBounds(rect) : null);
     this.overlay.showCaret(text ? null : rect, !text);
+  }
+
+  /** 캐럿 자리에서 글이 놓이는 가로 범위 (쪽 px): 표 칸이면 그 칸, 본문이면 그 단 */
+  private textBounds(rect: CaretRect): { left: number; right: number } | null {
+    const doc = this.doc!;
+    const caret = this.caret!;
+    if (inCell(caret)) {
+      const ctx = cellContext(doc, caret);
+      const box = ctx && tableCells(doc, ctx).find((c) => c.cellIdx === ctx.cell && c.pageIndex === rect.pageIndex);
+      // 칸 안쪽 여백만큼 띄운다 (기본 1.8mm ≈ 7px).
+      return box ? { left: box.x + 7, right: box.x + box.w - 7 } : null;
+    }
+    try {
+      const info = JSON.parse(doc.raw.getPageInfo(rect.pageIndex)) as {
+        bodyLeft: number;
+        bodyRight: number;
+        columns?: { x: number; width: number }[];
+      };
+      const col = info.columns?.find((c) => rect.x >= c.x - 1 && rect.x <= c.x + c.width + 1);
+      return col ? { left: col.x, right: col.x + col.width } : { left: info.bodyLeft, right: info.bodyRight };
+    } catch {
+      return null;
+    }
   }
 
   private emitState(): void {
@@ -481,6 +571,7 @@ export class Editor {
     this.stickyX = null;
     const rect = this.caretRect(this.caret);
     this.view.refresh(rect?.pageIndex ?? -1);
+    this.refreshMemos();
     this.paint(true);
     this.hostApi.changed();
     return true;
@@ -559,6 +650,7 @@ export class Editor {
     this.anchor = null;
     const rect = this.caretRect(pos);
     this.view.refresh(rect?.pageIndex ?? -1);
+    this.refreshMemos();
     this.paint(true);
     this.hostApi.changed();
   }
@@ -719,6 +811,8 @@ export class Editor {
   // ───────────── 키보드 (하드웨어 키보드·데스크톱) ─────────────
 
   private onKey(e: KeyboardEvent): boolean {
+    // 한글과 같은 기능 키 (F7 편집 용지)
+    if (e.key === 'F7') return this.hostApi.shortcut('F7');
     const mod = e.ctrlKey || e.metaKey;
     if (mod) {
       const k = e.key.toLowerCase();

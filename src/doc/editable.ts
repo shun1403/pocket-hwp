@@ -81,7 +81,18 @@ function parse<T>(json: string): T {
  * 모든 메서드는 DocPos 하나로 동작하고, 셀 안이면 ...ByPath 계열 API를 호출한다.
  */
 export class EditableDocument {
-  constructor(readonly raw: HwpDocument) {}
+  constructor(private engine: HwpDocument) {}
+
+  get raw(): HwpDocument {
+    return this.engine;
+  }
+
+  /** 엔진 밖에서 고친 문서(메모 등)로 통째로 바꾼다. 앞 문서는 풀어 준다. */
+  replaceRaw(next: HwpDocument): void {
+    const prev = this.engine;
+    this.engine = next;
+    prev.free();
+  }
 
   pageCount(): number {
     return this.raw.pageCount();

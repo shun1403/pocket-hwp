@@ -59,6 +59,7 @@ const PATHS = {
   footnote: 'M4 6h12M4 10h12M4 14h7M15 17h5M17 13.5v2.5',
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   bookmark: 'M6 3h12v18l-6-4-6 4z',
+  memo: 'M4 4h16v12H9l-5 4zM8 8h8M8 12h5',
   pageBreak: 'M5 3v5h14V3M5 21v-5h14v5M3 12h3M9 12h2M13 12h2M18 12h3',
   columns: 'M4 4h7v16H4zM13 4h7v16h-7z',
   calendar: 'M4 6h16v14H4zM4 10h16M8 3v5M16 3v5',

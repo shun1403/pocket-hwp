@@ -10,6 +10,7 @@ export type HandleSide = 'start' | 'end' | 'caret';
 export class Overlay {
   private readonly caret = document.createElement('div');
   private readonly preview = document.createElement('div');
+  private readonly previewText = document.createElement('span');
   private readonly handles: Record<HandleSide, HTMLDivElement> = {
     start: document.createElement('div'),
     end: document.createElement('div'),
@@ -18,10 +19,12 @@ export class Overlay {
   private readonly objectBox = document.createElement('div');
   private selection: HTMLDivElement[] = [];
   private highlight: { rects: PageRect[]; els: HTMLDivElement[] } = { rects: [], els: [] };
+  private marks: { rects: PageRect[]; els: HTMLDivElement[] } = { rects: [], els: [] };
 
   constructor(private readonly view: PageView) {
     this.caret.className = 'caret';
     this.preview.className = 'composition';
+    this.preview.append(this.previewText);
     this.objectBox.className = 'object-box';
     for (const side of ['start', 'end', 'caret'] as const) {
       const h = this.handles[side];
@@ -51,15 +54,26 @@ export class Overlay {
     }
   }
 
-  showComposition(text: string | null, rect: CaretRect | null, fontPx: number): void {
+  /**
+   * 조합 중 글자. 한 단어를 통째로 조합하는 키보드(삼성 키보드 등)에서는 글이 길어지므로
+   * 캐럿 자리에서 시작해 글이 놓일 폭(bounds: 본문 단·표 칸) 안에서 줄을 바꿔 보여 준다.
+   */
+  showComposition(text: string | null, rect: CaretRect | null, fontPx: number, bounds: { left: number; right: number } | null = null): void {
     if (!text || !rect) {
       this.preview.remove();
       return;
     }
     const z = this.view.zoom;
-    this.preview.textContent = text;
-    this.preview.style.fontSize = `${Math.max(fontPx * z, 12)}px`;
-    this.place(this.preview, rect.pageIndex, rect.x, rect.y, 0, rect.height);
+    const size = Math.max(fontPx * z, 12);
+    const left = bounds ? Math.min(bounds.left, rect.x) : rect.x;
+    const right = bounds ? Math.max(bounds.right, rect.x) : rect.x + fontPx * text.length;
+    // 줄 끝에 글자 하나 들어갈 자리도 없으면 다음 줄 머리에서 시작한다.
+    const wrapNow = right - rect.x < size / z;
+    this.previewText.textContent = text;
+    this.preview.style.fontSize = `${size}px`;
+    this.preview.style.lineHeight = `${Math.max(rect.height * z, size * 1.15)}px`;
+    this.preview.style.textIndent = wrapNow ? '0' : `${(rect.x - left) * z}px`;
+    this.place(this.preview, rect.pageIndex, left, wrapNow ? rect.y + rect.height : rect.y, Math.max(right - left, 1), 0);
   }
 
   showSelection(rects: PageRect[], start: CaretRect | null, end: CaretRect | null, withHandles: boolean): void {
@@ -91,14 +105,25 @@ export class Overlay {
     this.drawHighlight();
   }
 
+  /** 메모를 단 글 표시. 빈 배열이면 지운다. */
+  setMarks(rects: PageRect[]): void {
+    this.marks.rects = rects;
+    this.drawHighlight();
+  }
+
   /** 확대·다시 그리기 뒤 위치를 다시 맞춘다. */
   drawHighlight(): void {
-    this.highlight.els.forEach((el) => el.remove());
-    this.highlight.els = [];
-    for (const r of this.highlight.rects) {
-      const el = document.createElement('div');
-      el.className = 'range-rect';
-      if (this.place(el, r.pageIndex, r.x, r.y, r.width, r.height)) this.highlight.els.push(el);
+    for (const [layer, cls] of [
+      [this.highlight, 'range-rect'],
+      [this.marks, 'memo-mark'],
+    ] as const) {
+      layer.els.forEach((el) => el.remove());
+      layer.els = [];
+      for (const r of layer.rects) {
+        const el = document.createElement('div');
+        el.className = cls;
+        if (this.place(el, r.pageIndex, r.x, r.y, r.width, r.height)) layer.els.push(el);
+      }
     }
   }
 
