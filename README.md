@@ -15,7 +15,7 @@ Pocket HWP는 메일이나 메신저로 받은 한글(HWP·HWPX) 문서를 휴�
 
 | 안드로이드 | 아이폰 · 컴퓨터 |
 | --- | --- |
-| **[⬇ APK 내려받기 (v0.1.0)](https://github.com/shun1403/pocket-hwp/releases/download/v0.1.0/PocketHWP-0.1.0.apk)**<br>새 버전은 [릴리스 페이지](https://github.com/shun1403/pocket-hwp/releases)에서 | **[웹 앱 열기](https://shun1403.github.io/pocket-hwp/)** → 홈 화면에 추가<br>설치 파일 없이 브라우저에서 바로 (웹 버전 공개 뒤 열려요) |
+| **[⬇ APK 내려받기 (v0.1.1)](https://github.com/shun1403/pocket-hwp/releases/download/v0.1.1/PocketHWP-0.1.1.apk)**<br>새 버전은 [릴리스 페이지](https://github.com/shun1403/pocket-hwp/releases)에서 | **[웹 앱 열기](https://shun1403.github.io/pocket-hwp/)** → 홈 화면에 추가<br>설치 파일 없이 브라우저에서 바로 (웹 버전 공개 뒤 열려요) |
 
 자세한 설치 방법은 [아래](#-휴대폰에-설치하기)에 있어요.
 
@@ -74,7 +74,7 @@ PC 없이 휴대폰만으로 설치할 수 있어요. 아래 중 편한 방법�
 ### 2. APK 설치 파일 — 안드로이드
 
 1. 휴대폰 브라우저에서 이 저장소의 **[Releases](https://github.com/shun1403/pocket-hwp/releases)** 페이지를 열어요.
-2. 맨 위 릴리스의 **Assets**에서 `PocketHWP-버전.apk`를 눌러 내려받아요. (지금은 `PocketHWP-0.1.0.apk`)
+2. 맨 위 릴리스의 **Assets**에서 `PocketHWP-버전.apk`를 눌러 내려받아요. (지금은 `PocketHWP-0.1.1.apk`)
 3. 다운로드가 끝나면 알림이나 **내 파일 → 다운로드**에서 APK를 눌러요.
 4. “출처를 알 수 없는 앱” 안내가 뜨면 **설정 → 이 출처 허용**을 켜고 뒤로 돌아와 **설치**를 눌러요.
    - 삼성 휴대폰: **설정 → 애플리케이션 → 특별한 접근 → 출처를 알 수 없는 앱 설치**에서 브라우저(또는 내 파일)를 허용해요.
