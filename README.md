@@ -254,7 +254,22 @@ pnpm ios          # 웹 빌드 → Xcode 열기 (macOS + Xcode 필요)
 - 앱 구조와 번들 글꼴 구성은 [HOP](https://github.com/golbin/hop) (MIT)를 참고했습니다.
 - 번들 글꼴: SIL Open Font License 1.1 — [public/fonts/OFL.md](public/fonts/OFL.md)
 
-“한글”, “한컴”, “HWP”, “HWPX”는 ㈜한글과컴퓨터의 상표입니다.
-Pocket HWP는 한글과컴퓨터와 제휴·후원·승인 관계가 없는 독립 오픈소스 프로젝트입니다.
+## Notice
 
-License: [MIT](LICENSE)
+본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.
+
+HWPX 문서는 국가 표준 개방형 문서 형식(OWPML, KS X 6101)을 따릅니다.
+한글과컴퓨터의 프로그램 코드나 글꼴은 들어 있지 않으며, 배포용 문서의 보호를 푸는 기능은 넣지 않았습니다.
+
+## Trademark
+
+“한글”, “한컴”, “HWP”, “HWPX”는 주식회사 한글과컴퓨터의 등록 상표입니다.
+Pocket HWP는 한글과컴퓨터와 제휴·후원·승인 관계가 없는 독립 오픈소스 프로젝트이며,
+이 이름들은 앱이 다루는 파일 형식을 설명하기 위해서만 씁니다.
+
+“Hangul”, “Hancom”, “HWP”, and “HWPX” are registered trademarks of Hancom Inc.
+Pocket HWP is an independent open-source project with no affiliation, sponsorship, or endorsement by Hancom Inc.
+
+## License
+
+[MIT](LICENSE)
