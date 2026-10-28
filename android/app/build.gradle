@@ -9,7 +9,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // 릴리스 워크플로가 태그(v1.2.3)와 실행 번호로 채운다. 버전 코드가 올라가야 새 APK로 업데이트된다.
         versionCode((System.getenv("POCKET_VERSION_CODE") ?: "1").toInteger())
-        versionName(System.getenv("POCKET_VERSION_NAME") ?: "0.1.0")
+        versionName(System.getenv("POCKET_VERSION_NAME") ?: "0.1.2")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
