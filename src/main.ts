@@ -177,7 +177,12 @@ function openAbout(): void {
       h('dd', {}, 'MIT · 글꼴은 SIL OFL 1.1'),
     ),
     h('a.sheet-row', { href: 'https://github.com/shun1403/pocket-hwp', target: '_blank', rel: 'noopener' }, icon('github'), '소스 코드 (GitHub)'),
-    h('p.sheet-note', {}, '“한글”, “HWP”, “HWPX”는 ㈜한글과컴퓨터의 상표입니다. 이 앱은 한글과컴퓨터와 관계없는 독립 프로젝트입니다.'),
+    h('p.sheet-note', {}, '본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.'),
+    h(
+      'p.sheet-note',
+      {},
+      '“한글”, “한컴”, “HWP”, “HWPX”는 주식회사 한글과컴퓨터의 등록 상표입니다. 이 앱은 한글과컴퓨터와 제휴·후원·승인 관계가 없는 독립 오픈소스 프로젝트입니다.',
+    ),
   );
   sheet.open();
 }

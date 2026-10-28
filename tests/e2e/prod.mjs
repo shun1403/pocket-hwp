@@ -39,6 +39,14 @@ await step('배포용 빌드에 콘텐츠 보안 정책이 들어 있다', async
   assert.ok(csp?.includes("default-src 'self'"), csp ?? '없음');
 });
 
+await step('앱 정보에 한컴 공개 문서 참고 문구와 상표 안내가 있다', async () => {
+  await page.click('[aria-label="앱 정보"]');
+  await page.waitForSelector('.sheet.open:has-text("공개 문서를 참고하여 개발하였습니다")');
+  await page.waitForSelector('.sheet.open:has-text("등록 상표")');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+});
+
 await step('샘플 문서를 열고 글꼴·엔진이 정책 안에서 뜬다', async () => {
   await page.click('.sample-btn');
   await page.waitForSelector('.doc .page canvas', { timeout: 60000 });
