@@ -15,7 +15,7 @@ Pocket HWP는 메일이나 메신저로 받은 한글(HWP·HWPX) 문서를 휴�
 
 | 안드로이드 | 아이폰 · 컴퓨터 |
 | --- | --- |
-| **[⬇ APK 내려받기 (v0.1.1)](https://github.com/shun1403/pocket-hwp/releases/download/v0.1.1/PocketHWP-0.1.1.apk)**<br>새 버전은 [릴리스 페이지](https://github.com/shun1403/pocket-hwp/releases)에서 | **[웹 앱 열기](https://shun1403.github.io/pocket-hwp/)** → 홈 화면에 추가<br>설치 파일 없이 브라우저에서 바로 (웹 버전 공개 뒤 열려요) |
+| **[⬇ APK 내려받기 (v0.1.1)](https://github.com/shun1403/pocket-hwp/releases/download/v0.1.1/PocketHWP-0.1.1.apk)**<br>새 버전은 [릴리스 페이지](https://github.com/shun1403/pocket-hwp/releases)에서 | **[웹 앱 열기](https://shun1403.github.io/pocket-hwp/)** → 홈 화면에 추가<br>설치 파일 없이 브라우저에서 바로 |
 
 자세한 설치 방법은 [아래](#-휴대폰에-설치하기)에 있어요.
 
@@ -50,7 +50,7 @@ PC 없이 휴대폰만으로 설치할 수 있어요. 아래 중 편한 방법�
 
 ### 1. 웹 앱 — 안드로이드·아이폰 모두
 
-웹 주소: **https://shun1403.github.io/pocket-hwp/** (웹 버전이 공개되면 이 주소에서 열려요)
+웹 주소: **https://shun1403.github.io/pocket-hwp/**
 
 **안드로이드 (크롬)**
 1. 크롬에서 위 주소를 열어요.

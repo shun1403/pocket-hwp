@@ -1,9 +1,15 @@
 name: 웹 버전 배포 (GitHub Pages)
 
-# 웹 배포는 보류 중이라 자동으로 돌지 않는다.
-# 쓰려면 저장소 Settings → Pages → Source를 "GitHub Actions"로 켠 뒤 Actions 탭에서 직접 실행한다.
+# main 이 바뀌면 웹 앱(https://shun1403.github.io/pocket-hwp/)을 새로 배포한다. Actions 탭에서 직접 실행해도 된다.
+# 저장소 Settings → Pages → Source가 "GitHub Actions"여야 한다.
 # (무료 요금제에서는 저장소가 Public이어야 Pages를 쓸 수 있다.)
 on:
+  push:
+    branches: [main]
+    # 문서만 바뀌면 다시 배포하지 않는다.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
