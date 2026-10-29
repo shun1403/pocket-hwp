@@ -233,6 +233,19 @@ export class EditableDocument {
     return parts.join('\n');
   }
 
+  /** 선택 범위를 모양(굵게·표 등)째 HTML로 (복사할 때). 엔진이 못 만들면 null */
+  htmlBetween(a: DocPos, b: DocPos): string | null {
+    const [s, e] = orderRange(a, b);
+    try {
+      const html = inCell(s)
+        ? this.raw.exportSelectionInCellHtmlByPath(s.sec, s.para, cellPathJson(s), innerPara(s), s.offset, innerPara(e), e.offset)
+        : this.raw.exportSelectionHtml(s.sec, s.para, s.offset, e.para, e.offset);
+      return html || null;
+    } catch {
+      return null;
+    }
+  }
+
   charProps(pos: DocPos): CharProps {
     try {
       const json = inCell(pos)

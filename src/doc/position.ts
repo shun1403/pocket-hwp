@@ -117,3 +117,25 @@ export function wordBounds(text: string, offset: number): [number, number] {
   while (end < chars.length && isWord(chars[end])) end += 1;
   return [start, end];
 }
+
+const isWordChar = (ch: string | undefined) => !!ch && /[\p{L}\p{N}_]/u.test(ch);
+
+/** Ctrl+→: 다음 낱말의 처음으로 (지금 낱말과 뒤따르는 빈칸을 건너뛴다). */
+export function nextWordOffset(text: string, offset: number): number {
+  const chars = Array.from(text);
+  let i = Math.min(Math.max(offset, 0), chars.length);
+  if (isWordChar(chars[i])) while (i < chars.length && isWordChar(chars[i])) i += 1;
+  else if (i < chars.length && !/\s/.test(chars[i])) i += 1;
+  while (i < chars.length && /\s/.test(chars[i])) i += 1;
+  return i;
+}
+
+/** Ctrl+←: 지금(또는 앞) 낱말의 처음으로. */
+export function prevWordOffset(text: string, offset: number): number {
+  const chars = Array.from(text);
+  let i = Math.min(Math.max(offset, 0), chars.length);
+  while (i > 0 && /\s/.test(chars[i - 1])) i -= 1;
+  if (isWordChar(chars[i - 1])) while (i > 0 && isWordChar(chars[i - 1])) i -= 1;
+  else if (i > 0) i -= 1;
+  return i;
+}
