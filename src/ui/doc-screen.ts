@@ -1,10 +1,11 @@
 import { backScope } from '../app/back';
 import type { DocumentSession } from '../app/session';
 import { Editor, type EditorState } from '../editor/editor';
+import { fillClipboard } from '../editor/text-input';
 import { copyText, readHtml, readText } from '../platform/clipboard';
 import { isNative } from '../platform/files';
 import { askText } from './dialog';
-import { openExportSheet, openInfoSheet, openPagesSheet, saveToOriginal } from './doc-sheets';
+import { openExportSheet, openInfoSheet, openPagesSheet, printWithProgress, saveToOriginal } from './doc-sheets';
 import { fieldCount } from '../doc/ops/fields';
 import { FormFill } from './form-fill';
 import { type VersionActions, openVersionsSheet } from './versions-sheet';
@@ -30,6 +31,7 @@ import { ToolPanel } from './panel/tool-panel';
 import { QuickBar } from './quick-bar';
 import { openReader } from './reader';
 import { SearchBar } from './search-bar';
+import { type ShortcutActions, openShortcutsSheet, runShortcut } from './shortcuts';
 import { Sheet } from './sheet';
 import { toast } from './toast';
 
@@ -58,6 +60,7 @@ export class DocScreen {
   private searchBack: { dismiss: () => void } | null = null;
   private state: EditorState | null = null;
   private dockTimer = 0;
+  private readonly keys: ShortcutActions;
 
   constructor(
     private readonly session: DocumentSession,
@@ -80,23 +83,27 @@ export class DocScreen {
       },
       link: (pos, link) => openLinkSheet(this.editor, pos, link),
       memo: (id) => void openMemoById(this.editor, id),
-      shortcut: (k) => {
-        if (k === 's') {
-          if (session.sourceName) void saveToOriginal(session);
-          else void session.save().then(() => toast('보관함에 저장했어요.'));
-          return true;
-        }
-        if (k === 'f') {
-          this.openSearch();
-          return true;
-        }
-        if (k === 'F7') {
-          openPageSetupSheet(this.editor);
-          return true;
-        }
-        return false;
-      },
+      shortcut: (name) => runShortcut(name, this.keys),
     });
+    this.keys = {
+      editor: this.editor,
+      save: () => {
+        if (session.sourceName) void saveToOriginal(session);
+        else void session.save().then(() => toast('보관함에 저장했어요.'));
+      },
+      search: () => this.openSearch(),
+      print: () => void printWithProgress(session),
+      pageSetup: () => {
+        if (this.editor.currentMode !== 'edit') this.setEditing(true, false);
+        openPageSetupSheet(this.editor);
+      },
+      panel: (tab) => this.openPanel(tab),
+      help: () => openShortcutsSheet(),
+    };
+    document.addEventListener('keydown', this.onDocKey);
+    document.addEventListener('copy', this.onDocCopy);
+    document.addEventListener('cut', this.onDocCut);
+    document.addEventListener('paste', this.onDocPaste);
     session.onSaved = () => {
       // 메모를 넣으면 HWPX로 저장되며 이름 끝(.hwp → .hwpx)이 바뀔 수 있다.
       this.title.textContent = session.name;
@@ -251,6 +258,7 @@ export class DocScreen {
       row('clock', '버전 기록 (예전 내용으로 되돌리기)', () => void openVersionsSheet(this.session, this.versionActions)),
       row('info', '문서 정보', () => openInfoSheet(this.session)),
       row('sparkles', '사용법', () => openTips()),
+      row('keyboard', '단축키 (키보드 연결 시)', () => openShortcutsSheet()),
     );
     sheet.open();
   }
@@ -474,7 +482,43 @@ export class DocScreen {
     return this.session.save();
   }
 
+  // ───────────── 하드웨어 키보드 ─────────────
+  // 숨은 입력란에 포커스가 없을 때(보기 중, 도구 패널을 연 동안)도 단축키·복사·붙여넣기가 되게 한다.
+
+  /** 입력란(편집기의 숨은 입력란은 스스로 처리)·시트·읽기 모드에서 난 이벤트면 true */
+  private notForDocument(target: EventTarget | null): boolean {
+    if (target === this.editor.input.el || document.querySelector('[role="dialog"]')) return true;
+    return target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+  }
+
+  private readonly onDocKey = (e: KeyboardEvent) => {
+    if (e.defaultPrevented || e.isComposing || this.notForDocument(e.target)) return;
+    if (this.editor.handleKey(e)) e.preventDefault();
+  };
+
+  private readonly onDocCopy = (e: ClipboardEvent) => {
+    if (!this.notForDocument(e.target)) fillClipboard(e, this.editor.clipboardData());
+  };
+
+  private readonly onDocCut = (e: ClipboardEvent) => {
+    if (this.notForDocument(e.target) || this.editor.currentMode !== 'edit') return;
+    if (fillClipboard(e, this.editor.clipboardData())) this.editor.backspace();
+  };
+
+  private readonly onDocPaste = (e: ClipboardEvent) => {
+    if (this.notForDocument(e.target) || this.editor.currentMode !== 'edit') return;
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    const html = e.clipboardData?.getData('text/html') || null;
+    e.preventDefault();
+    if (html) this.editor.pasteHtml(html, text);
+    else if (text) this.editor.insertText(text);
+  };
+
   async close(): Promise<void> {
+    document.removeEventListener('keydown', this.onDocKey);
+    document.removeEventListener('copy', this.onDocCopy);
+    document.removeEventListener('cut', this.onDocCut);
+    document.removeEventListener('paste', this.onDocPaste);
     this.editBack?.dismiss();
     this.searchBack?.dismiss();
     this.editor.destroy();

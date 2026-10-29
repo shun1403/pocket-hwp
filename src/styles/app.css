@@ -2394,3 +2394,37 @@ input:focus-visible {
 .page-summary.error {
   color: var(--danger);
 }
+
+/* 단축키 목록 */
+.shortcut-group h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin: 14px 10px 4px;
+}
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+}
+.shortcut-keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.shortcut-keys kbd {
+  font: 12px/1 ui-monospace, 'SF Mono', Menlo, monospace;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  white-space: nowrap;
+}

@@ -50,6 +50,19 @@ export async function saveToOriginal(session: DocumentSession): Promise<boolean>
 }
 
 /** 보내기(공유)·내보내기 선택지 */
+/** 쪽마다 그리는 동안 진행 상황을 보여 주며 인쇄한다. */
+export async function printWithProgress(session: DocumentSession): Promise<void> {
+  const progress = h('div.progress-toast', {}, '인쇄 준비 중…');
+  document.body.append(progress);
+  try {
+    await printDocument(session.doc.raw, baseName(session.name), (done, total) => {
+      progress.textContent = `인쇄 준비 중… ${done}/${total}`;
+    });
+  } finally {
+    progress.remove();
+  }
+}
+
 export function openExportSheet(session: DocumentSession): void {
   const sheet = new Sheet({ title: '보내기' });
   const row = (iconName: Parameters<typeof icon>[0], title: string, sub: string, run: () => Promise<void>) =>
@@ -103,17 +116,7 @@ export function openExportSheet(session: DocumentSession): void {
         progress.remove();
       }
     }),
-    row('print', '인쇄', '프린터로 바로 인쇄하기', async () => {
-      const progress = h('div.progress-toast', {}, '인쇄 준비 중…');
-      document.body.append(progress);
-      try {
-        await printDocument(session.doc.raw, baseName(session.name), (done, total) => {
-          progress.textContent = `인쇄 준비 중… ${done}/${total}`;
-        });
-      } finally {
-        progress.remove();
-      }
-    }),
+    row('print', '인쇄', '프린터로 바로 인쇄하기', () => printWithProgress(session)),
     row('text', '텍스트 (.txt)', '글자만 뽑아 보내기', async () => {
       const text = documentText(session.doc.raw);
       await deliver(`${baseName(session.name)}.txt`, new TextEncoder().encode(text), MIME.txt);

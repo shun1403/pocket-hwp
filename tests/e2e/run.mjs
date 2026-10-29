@@ -1087,6 +1087,78 @@ await step('편집 용지(F7): 크기·방향·제본·여백 일곱 가지를 m
   await page.waitForFunction(() => !document.querySelector('.sheet.open'));
 });
 
+await step('단축키: 한글 입력 상태의 Ctrl+B, 정렬, 낱말 이동, 복사·잘라내기, 도구 패널을 연 채로도', async () => {
+  await newDoc();
+  await page.keyboard.type('보고서 초안 입니다');
+  // 한글 입력 상태에서는 e.key 가 자모로 온다. 조합 중에 눌러도 처리한다.
+  const press = (key, code, mods = {}) =>
+    page.evaluate(
+      ([key, code, mods]) => {
+        const ta = document.activeElement?.tagName === 'TEXTAREA' ? document.activeElement : document.body;
+        const e = new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, ...mods });
+        ta.dispatchEvent(e);
+        return e.defaultPrevented;
+      },
+      [key, code, mods],
+    );
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Shift+End');
+  assert.equal(await press('ㅠ', 'KeyB', { ctrlKey: true }), true);
+  assert.equal(await editor((ed) => ed.doc.charProps({ sec: 0, para: 0, offset: 1 }).bold), true);
+  await press('Process', 'KeyC', { ctrlKey: true, shiftKey: true });
+  assert.equal(await editor((ed) => ed.doc.paraProps({ sec: 0, para: 0, offset: 0 }).alignment), 'center');
+  // 자간(Alt+Shift+W/N)·장평(K/J) 1%씩, 줄 간격(A/Z) 10%씩
+  for (const code of ['KeyW', 'KeyW', 'KeyN', 'KeyW', 'KeyK', 'KeyJ', 'KeyJ', 'KeyA', 'KeyA', 'KeyZ'])
+    await press('ㅈ', code, { altKey: true, shiftKey: true });
+  const props = await editor((ed) => ({ c: ed.doc.charProps({ sec: 0, para: 0, offset: 1 }), p: ed.doc.paraProps({ sec: 0, para: 0, offset: 0 }) }));
+  assert.equal(props.c.spacings[0], 2);
+  assert.equal(props.c.ratios[0], 99);
+  assert.equal(props.p.lineSpacing, 170);
+  // Ctrl+→ 는 낱말 단위로 옮긴다.
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Control+ArrowRight');
+  assert.equal(await editor((ed) => ed.caret.offset), 4);
+  // 복사·잘라내기는 문서에서 고른 글(모양 포함)을 클립보드에 넣는다.
+  await page.keyboard.press('Shift+Control+ArrowRight');
+  const clip = (type) =>
+    page.evaluate((type) => {
+      const dt = new DataTransfer();
+      document.activeElement.dispatchEvent(new ClipboardEvent(type, { clipboardData: dt, bubbles: true, cancelable: true }));
+      return { text: dt.getData('text/plain'), html: dt.getData('text/html') };
+    }, type);
+  const copied = await clip('copy');
+  assert.equal(copied.text, '초안 ');
+  assert.ok(copied.html.includes('font-weight:bold'), copied.html);
+  await clip('cut');
+  assert.equal(await paraText(), '보고서 입니다');
+  // Alt+L 로 글자 도구를 열면 키보드(숨은 입력란)가 내려가도 단축키가 된다.
+  await press('ㅣ', 'KeyL', { altKey: true });
+  await page.waitForSelector('.tool-panel.open');
+  assert.equal(await press('ㅋ', 'KeyZ', { ctrlKey: true }), true);
+  assert.equal(await paraText(), '보고서 초안 입니다');
+  // 한 글자를 조합하던 중에 누른 단축키: 조합한 글자는 한 번만 들어가고 단축키도 된다.
+  await page.click('.qb.qb-kb');
+  await page.keyboard.press('End');
+  const boldBefore = await editor((ed) => !!ed.currentChar().bold);
+  await cdp.send('Input.imeSetComposition', { text: '끝', selectionStart: 1, selectionEnd: 1 });
+  await page.evaluate(() =>
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Process', code: 'KeyB', ctrlKey: true, isComposing: true, bubbles: true, cancelable: true })),
+  );
+  await page.waitForTimeout(200);
+  assert.equal(await paraText(), '보고서 초안 입니다끝');
+  assert.equal(await editor((ed) => !!ed.currentChar().bold), !boldBefore);
+  await page.keyboard.press('Backspace');
+  // Ctrl+Enter 쪽 나누기, F1 단축키 목록
+  await page.keyboard.press('End');
+  const pages = await editor((ed) => ed.doc.pageCount());
+  await page.keyboard.press('Control+Enter');
+  assert.equal(await editor((ed) => ed.doc.pageCount()), pages + 1);
+  await page.keyboard.press('F1');
+  await page.waitForSelector('.sheet.open .shortcut-row:has-text("가운데 정렬")');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+});
+
 await step('페이지 오류가 없다', async () => {
   assert.deepEqual(errors, []);
 });

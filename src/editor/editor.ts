@@ -7,7 +7,9 @@ import {
   type PageRect,
   inCell,
   innerPara,
+  nextWordOffset,
   orderRange,
+  prevWordOffset,
   sameContainer,
   samePos,
   withInnerPara,
@@ -22,6 +24,7 @@ import { HwpDocument } from '../engine/rhwp';
 import { haptic } from '../platform/files';
 import { attachGestures } from '../view/gestures';
 import { PageView } from '../view/page-view';
+import { keyName } from './keys';
 import { Overlay, type HandleSide } from './overlay';
 import { TextInput } from './text-input';
 
@@ -46,8 +49,8 @@ export interface EditorHost {
   toggleChrome(): void;
   /** 선택 범위 메뉴를 띄울 화면 좌표 (null이면 숨김) */
   selectionMenu(anchor: { x: number; top: number; bottom: number } | null): void;
-  /** 단축키 중 앱이 처리할 것 (저장 등) */
-  shortcut(key: string): boolean;
+  /** 앱이 처리할 단축키 ('Ctrl+S', 'Alt+L', 'F7' 처럼 keyName 형식). 처리했으면 true */
+  shortcut(name: string): boolean;
   /** 개체를 골랐다 (메뉴를 띄울 화면 좌표). null이면 선택 해제 */
   objectSelected(obj: PageObject | null, anchor: { x: number; top: number; bottom: number } | null): void;
   /** 편집 중 머리말·꼬리말·각주를 눌렀다 */
@@ -58,7 +61,7 @@ export interface EditorHost {
   memo(id: number): void;
 }
 
-type Move = 'left' | 'right' | 'up' | 'down' | 'home' | 'end';
+type Move = 'left' | 'right' | 'up' | 'down' | 'home' | 'end' | 'wordLeft' | 'wordRight' | 'docStart' | 'docEnd';
 
 /**
  * 모바일 편집기의 중심. 페이지 뷰·제스처·입력을 엮어 캐럿과 선택을 관리하고
@@ -95,7 +98,13 @@ export class Editor {
     this.input = new TextInput({
       actions: (a) => this.applyInput(a),
       composing: (t) => this.showComposition(t),
-      key: (e) => this.onKey(e),
+      key: (e) => this.handleKey(e),
+      copy: () => this.clipboardData(),
+      cut: () => {
+        const data = this.clipboardData();
+        if (data && this.mode === 'edit') this.backspace();
+        return data;
+      },
       paste: (t, html) => (html ? this.pasteHtml(html, t) : this.insertText(t)),
     });
     host.append(this.view.scroller, this.input.el);
@@ -747,6 +756,13 @@ export class Editor {
     return sel && this.doc ? this.doc.textBetween(sel[0], sel[1]) : '';
   }
 
+  /** Ctrl+C·X 로 클립보드에 넣을 글과 HTML. 고른 글이 없으면 null */
+  clipboardData(): { text: string; html: string | null } | null {
+    const sel = this.selection;
+    if (!sel || !this.doc) return null;
+    return { text: this.doc.textBetween(sel[0], sel[1]), html: this.doc.htmlBetween(sel[0], sel[1]) };
+  }
+
   clearSelection(): void {
     if (!this.anchor) return;
     this.anchor = null;
@@ -858,40 +874,36 @@ export class Editor {
 
   // ───────────── 키보드 (하드웨어 키보드·데스크톱) ─────────────
 
-  private onKey(e: KeyboardEvent): boolean {
-    // 한글과 같은 기능 키 (F7 편집 용지)
-    if (e.key === 'F7') return this.hostApi.shortcut('F7');
-    const mod = e.ctrlKey || e.metaKey;
-    if (mod) {
-      const k = e.key.toLowerCase();
-      if (k === 'z') {
-        if (e.shiftKey) this.redo();
-        else this.undo();
-        return true;
-      }
-      if (k === 'y') return this.redo(), true;
-      if (k === 'a') return this.selectAll(), true;
-      if (k === 'b') return this.applyChar({ bold: !this.currentChar().bold }), true;
-      if (k === 'i') return this.applyChar({ italic: !this.currentChar().italic }), true;
-      if (k === 'u') return this.applyChar({ underline: !this.currentChar().underline }), true;
-      return this.hostApi.shortcut(k);
-    }
+  /**
+   * 하드웨어 키보드의 이동·지우기 키를 처리하고, 나머지 조합(Ctrl+B, Alt+L, F7 …)은
+   * 앱의 단축키 목록(hostApi.shortcut)에 넘긴다. 처리했으면 true.
+   */
+  handleKey(e: KeyboardEvent): boolean {
+    const name = keyName(e);
+    const word = e.ctrlKey || e.metaKey;
     const moves: Record<string, Move> = {
-      ArrowLeft: 'left',
-      ArrowRight: 'right',
+      ArrowLeft: word ? 'wordLeft' : 'left',
+      ArrowRight: word ? 'wordRight' : 'right',
       ArrowUp: 'up',
       ArrowDown: 'down',
-      Home: 'home',
-      End: 'end',
+      Home: word ? 'docStart' : 'home',
+      End: word ? 'docEnd' : 'end',
     };
-    if (moves[e.key]) {
+    if (this.mode === 'edit' && moves[e.key] && !e.altKey) {
       this.move(moves[e.key], e.shiftKey);
       return true;
     }
-    if (e.key === 'Delete') return this.deleteForward(), true;
-    if (e.key === 'Tab') return this.insertText('\t'), true;
-    if (e.key === 'Escape') return this.clearSelection(), true;
-    return false;
+    if (e.key === 'PageUp' || e.key === 'PageDown') {
+      const s = this.view.scroller;
+      s.scrollBy({ top: (e.key === 'PageUp' ? -0.9 : 0.9) * s.clientHeight });
+      return true;
+    }
+    if (this.mode === 'edit' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (e.key === 'Delete') return this.deleteForward(), true;
+      if (e.key === 'Tab' && !e.shiftKey) return this.insertText('\t'), true;
+      if (e.key === 'Escape' && this.anchor) return this.clearSelection(), true;
+    }
+    return this.hostApi.shortcut(name);
   }
 
   currentChar(): CharProps {
@@ -928,6 +940,18 @@ export class Editor {
         return { ...from, offset: 0 };
       case 'end':
         return this.paraEnd(from);
+      case 'wordLeft': {
+        if (from.offset === 0) return this.step(from, 'left');
+        return { ...from, offset: prevWordOffset(doc.paraText(from), from.offset) };
+      }
+      case 'wordRight': {
+        if (from.offset >= doc.paraLength(from)) return this.step(from, 'right');
+        return { ...from, offset: nextWordOffset(doc.paraText(from), from.offset) };
+      }
+      case 'docStart':
+        return withInnerPara(from, 0, 0);
+      case 'docEnd':
+        return this.paraEnd(withInnerPara(from, doc.paraCount(from) - 1, 0));
       default:
         return this.vertical(from, dir === 'up' ? -1 : 1);
     }

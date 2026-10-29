@@ -1,4 +1,5 @@
 import { SENTINEL, compositionText, diffInput, type InputAction } from '../doc/input-diff';
+import { isShortcutKey } from './keys';
 
 export interface TextInputHandlers {
   actions(actions: InputAction[]): void;
@@ -6,6 +7,24 @@ export interface TextInputHandlers {
   key(e: KeyboardEvent): boolean;
   /** html 이 있으면 서식 있는 붙여넣기 */
   paste(text: string, html: string | null): void;
+  /** Ctrl+C: 클립보드에 넣을 고른 글 (없으면 null) */
+  copy(): ClipboardContent | null;
+  /** Ctrl+X: copy 와 같고, 고른 글을 지운다 */
+  cut(): ClipboardContent | null;
+}
+
+export interface ClipboardContent {
+  text: string;
+  html: string | null;
+}
+
+/** 복사·잘라내기 이벤트에 고른 글을 넣는다. 넣었으면 true */
+export function fillClipboard(e: ClipboardEvent, content: ClipboardContent | null): boolean {
+  if (!content || !e.clipboardData) return false;
+  e.clipboardData.setData('text/plain', content.text);
+  if (content.html) e.clipboardData.setData('text/html', content.html);
+  e.preventDefault();
+  return true;
 }
 
 /**
@@ -45,9 +64,16 @@ export class TextInput {
       this.flush();
     });
     ta.addEventListener('keydown', (e) => {
-      if (this.composing || e.isComposing || e.keyCode === 229) return;
+      if (this.composing || e.isComposing || e.keyCode === 229) {
+        // 한글을 조합하던 중에 누른 단축키(Ctrl·Alt·기능 키)는 조합을 끝내고 처리한다.
+        if (!isShortcutKey(e)) return;
+        this.commitComposition();
+      }
       if (this.h.key(e)) e.preventDefault();
     });
+    // 숨은 textarea 에는 고른 글이 없으므로 복사·잘라내기는 문서에서 고른 글로 채운다.
+    ta.addEventListener('copy', (e) => void fillClipboard(e, this.h.copy()));
+    ta.addEventListener('cut', (e) => void fillClipboard(e, this.h.cut()));
     ta.addEventListener('paste', (e) => {
       const text = e.clipboardData?.getData('text/plain') ?? '';
       const html = e.clipboardData?.getData('text/html') || null;

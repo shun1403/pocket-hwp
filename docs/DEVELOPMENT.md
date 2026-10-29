@@ -126,6 +126,18 @@ tests/e2e      모바일 에뮬레이션 E2E
 확정된 글만 남습니다. 조합 중에 다른 편집·실행 취소·명령이 들어오면 먼저 조합을 확정합니다(`settleComposition`).
 엔진이 그 자리에 글을 넣지 못하면 예전처럼 캐럿 자리에 떠 있는 미리보기(`Overlay.showComposition`)로 대신합니다.
 
+### 하드웨어 키보드 단축키
+
+단축키는 `ui/shortcuts.ts`의 표 하나에 모읍니다(한글과 같은 조합을 먼저, 목록 시트 `F1`도 이 표로 그립니다).
+키 이름은 `editor/keys.ts`의 `keyName`이 `'Ctrl+Shift+L'`처럼 만들며, 한글 입력 상태에서는 `e.key`가 `'ㅠ'` 같은
+자모로 오므로 **글쇠 자리(`e.code`)를 먼저** 봅니다. 조합 중에 누른 Ctrl·Alt·기능 키는 조합을 확정한 뒤 처리합니다.
+이동·지우기 키는 `Editor.handleKey`가 직접 다루고 나머지는 `EditorHost.shortcut(name)`으로 넘깁니다.
+
+숨은 입력란에 포커스가 없을 때(보기 중, 도구 패널을 연 동안)도 되도록 `DocScreen`이 `document`의
+`keydown`·`copy`·`cut`·`paste`를 받아 같은 길로 보냅니다(입력란·시트·읽기 모드에서 난 이벤트는 건너뜁니다).
+숨은 textarea에는 고른 글이 없으므로 복사·잘라내기는 `copy`/`cut` 이벤트에서 문서의 고른 글을
+평문과 HTML(`EditableDocument.htmlBetween`, 모양 포함)로 채웁니다.
+
 ### 렌더링과 메모리
 
 쪽 자리는 문서 크기대로 미리 잡고 화면 근처 쪽만 그립니다. 화면에서 4화면 이상 멀어진 쪽의 캔버스는
