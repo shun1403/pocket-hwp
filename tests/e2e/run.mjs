@@ -206,11 +206,11 @@ await step('표를 넣고 셀 안에 글을 쓴다', async () => {
   assert.equal(await editor((ed) => ed.doc.raw.getTextRange(0, 1, 0, 30)), 'XYZSecond line', '표는 문단 끝에 들어가야 함');
   const pages = await editor((ed) => ed.doc.pageCount());
   assert.equal(pages, 1);
-  // 표의 첫 칸을 찾아 탭한다.
+  // 표의 첫 칸을 찾아 안쪽을 탭한다 (바깥 테두리를 누르면 표 전체가 골라진다).
   const target = await editor((ed) => {
     for (let y = 40; y < 400; y += 4) {
       const pos = ed.doc.hitTest(0, 200, y);
-      if (pos?.cellPath) return { y };
+      if (pos?.cellPath) return { y: y + 6 };
     }
     return null;
   });
@@ -1157,6 +1157,93 @@ await step('단축키: 한글 입력 상태의 Ctrl+B, 정렬, 낱말 이동, �
   await page.waitForSelector('.sheet.open .shortcut-row:has-text("가운데 정렬")');
   await page.goBack();
   await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+});
+
+await step('표 전체 고르기: 테두리를 눌러 고르고, 복사·붙여넣기·지우기', async () => {
+  await newDoc();
+  await page.keyboard.type('표 앞 글');
+  await editor((ed) => ed.insertTable(2, 2));
+  await page.keyboard.type('칸 글');
+  const tables = () => editor((ed) => JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.filter((c) => c.type === 'table').length);
+  // 칸 안을 누르면 글을 고치고, 바깥 테두리를 누르면 표 전체를 고른다.
+  // 화면이 움직일 수 있으므로 누르기 직전에 잰다.
+  const measure = () => page.evaluate(() => {
+    const ed = window.__pocket.docScreen().editor;
+    const t = JSON.parse(ed.doc.raw.getPageControlLayout(0)).controls.find((c) => c.type === 'table');
+    const r = ed.view.slots[0].el.getBoundingClientRect();
+    const z = ed.view.zoom;
+    return { x: r.x + (t.x + t.w / 2) * z, y: r.y + (t.y - 2) * z, inX: r.x + (t.x + 20) * z, inY: r.y + (t.y + t.h / 2) * z };
+  });
+  const borderAt = async () => {
+    for (let prev = null; ; await page.waitForTimeout(150)) {
+      const now = await measure();
+      if (prev && Math.abs(prev.y - now.y) < 0.5) return now;
+      prev = now;
+    }
+  };
+  let border = await borderAt();
+  await page.touchscreen.tap(border.inX, border.inY);
+  assert.equal(await editor((ed) => ed.selectedObject), null);
+  await page.waitForTimeout(500); // 두 번 탭으로 읽히지 않게
+  border = await borderAt();
+  await page.touchscreen.tap(border.x, border.y);
+  await page.waitForFunction(() => window.__pocket.docScreen().editor.selectedObject?.kind === 'table');
+  await page.waitForSelector('.selection-menu:not([hidden]) button:has-text("표 도구")');
+  const clip = (type, text) =>
+    page.evaluate(
+      ([type, text]) => {
+        const dt = new DataTransfer();
+        if (text) dt.setData('text/plain', text);
+        (document.activeElement ?? document.body).dispatchEvent(new ClipboardEvent(type, { clipboardData: dt, bubbles: true, cancelable: true }));
+        return dt.getData('text/plain');
+      },
+      [type, text],
+    );
+  const marker = await clip('copy');
+  assert.equal(marker, '[표]');
+  // 본문 끝에 붙이면 표가 하나 더 생긴다.
+  await editor((ed) => ed.goTo({ sec: 0, para: ed.doc.paraCount({ sec: 0, para: 0, offset: 0 }) - 1, offset: 0 }));
+  await clip('paste', marker);
+  assert.equal(await tables(), 2);
+  // 고른 표는 Delete 로 지우고, 실행 취소로 되살린다.
+  await page.waitForTimeout(500);
+  border = await borderAt();
+  await page.touchscreen.tap(border.x, border.y);
+  await page.waitForFunction(() => window.__pocket.docScreen().editor.selectedObject?.kind === 'table');
+  await page.keyboard.press('Delete');
+  assert.equal(await tables(), 1);
+  assert.equal(await editor((ed) => !!ed.caret?.cellPath?.length), false);
+  await page.click('[aria-label="실행 취소"]');
+  assert.equal(await tables(), 2);
+  // 표 탭의 '표 고르기'
+  await editor((ed) => ed.goTo({ sec: 0, para: 1, offset: 0, cellPath: [{ controlIndex: 0, cellIndex: 0, cellParaIndex: 0 }] }));
+  await openTab('표');
+  await page.click('.panel-body .tile[aria-label="표 고르기"]');
+  assert.equal(await editor((ed) => ed.selectedObject?.kind), 'table');
+  await page.keyboard.press('Escape');
+  assert.equal(await editor((ed) => ed.selectedObject), null);
+});
+
+await step('손잡이를 화면 아래 끝까지 끌면 문서가 따라 내려가며 범위가 넓어진다', async () => {
+  await newDoc();
+  await editor((ed) => ed.insertText(Array.from({ length: 80 }, (_, i) => `긴 문단 ${i} 가나다라마바사아자차카타파하`).join('\n')));
+  await editor((ed) => ed.goTo({ sec: 0, para: 0, offset: 0 }));
+  await editor((ed) => ed.select({ sec: 0, para: 0, offset: 0 }, { sec: 0, para: 0, offset: 2 }));
+  await page.waitForTimeout(200);
+  const hb = await page.evaluate(() => {
+    const r = document.querySelector('.sel-handle-end').getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  const vh = page.viewportSize().height;
+  await touch('touchStart', hb.x, hb.y);
+  for (let y = hb.y; y < vh - 20; y += 30) await touch('touchMove', hb.x, y);
+  await page.waitForTimeout(800);
+  await touch('touchEnd', 0, 0);
+  const s = await editor((ed) => ({ para: ed.caret.para, anchor: ed.anchor?.para, rects: document.querySelectorAll('.sel-rect').length }));
+  assert.equal(s.anchor, 0);
+  assert.ok(s.para > 25, JSON.stringify(s));
+  assert.ok(s.rects > 25, JSON.stringify(s));
 });
 
 await step('페이지 오류가 없다', async () => {

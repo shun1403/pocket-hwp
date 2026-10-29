@@ -25,7 +25,7 @@ import { openPageSetupSheet } from './panel/page-setup-sheet';
 import { maybeShowEditTips, openTips } from './tips';
 import { h, keepFocus } from './dom';
 import { icon } from './icons';
-import { type PageObject, deleteObject, equationScript, isImageInline, scaleObject, setEquationScript, setImageInline } from '../doc/ops/objects';
+import { COPYABLE, type PageObject, deleteObject, equationScript, isImageInline, scaleObject, setEquationScript, setImageInline } from '../doc/ops/objects';
 import { openEquationSheet } from './panel/equation-sheet';
 import { ToolPanel } from './panel/tool-panel';
 import { QuickBar } from './quick-bar';
@@ -397,7 +397,23 @@ export class DocScreen {
       const ed = this.editor;
       const item = (label: string, run: () => void) => keepFocus(h('button', { role: 'menuitem', onclick: run }, label));
       const items: HTMLElement[] = [];
-      if (obj.kind !== 'equation' && obj.kind !== 'chart') {
+      if (COPYABLE.includes(obj.kind)) {
+        const copy = async (cut: boolean) => {
+          const data = cut ? ed.cutClipboard() : ed.clipboardData();
+          const ok = !!data && (await copyText(data.text));
+          toast(ok ? (cut ? '잘라냈어요. 붙여넣기로 다른 곳에 넣어요.' : '복사했어요.') : '복사하지 못했어요.');
+        };
+        items.push(item('잘라내기', () => void copy(true)), item('복사', () => void copy(false)));
+      }
+      if (obj.kind === 'table') {
+        items.push(
+          item('표 도구', () => {
+            ed.clearObject();
+            this.openPanel('table');
+          }),
+        );
+      }
+      if (obj.kind !== 'equation' && obj.kind !== 'chart' && obj.kind !== 'table') {
         items.push(item('크게', () => ed.objectCommand((doc, o) => scaleObject(doc, o, 1.2))));
         items.push(item('작게', () => ed.objectCommand((doc, o) => scaleObject(doc, o, 1 / 1.2))));
       }
@@ -465,8 +481,7 @@ export class DocScreen {
       editing &&
         item('붙여넣기', async () => {
           const [text, html] = await Promise.all([readText(), readHtml()]);
-          if (html) this.editor.pasteHtml(html, text ?? '');
-          else if (text) this.editor.insertText(text);
+          if (text || html) this.editor.paste(text ?? '', html);
           else toast('붙여 넣을 글이 없어요.');
         }),
       item('모두 선택', () => this.editor.selectAll()),
@@ -502,16 +517,13 @@ export class DocScreen {
 
   private readonly onDocCut = (e: ClipboardEvent) => {
     if (this.notForDocument(e.target) || this.editor.currentMode !== 'edit') return;
-    if (fillClipboard(e, this.editor.clipboardData())) this.editor.backspace();
+    fillClipboard(e, this.editor.cutClipboard());
   };
 
   private readonly onDocPaste = (e: ClipboardEvent) => {
     if (this.notForDocument(e.target) || this.editor.currentMode !== 'edit') return;
-    const text = e.clipboardData?.getData('text/plain') ?? '';
-    const html = e.clipboardData?.getData('text/html') || null;
     e.preventDefault();
-    if (html) this.editor.pasteHtml(html, text);
-    else if (text) this.editor.insertText(text);
+    this.editor.paste(e.clipboardData?.getData('text/plain') ?? '', e.clipboardData?.getData('text/html') || null);
   };
 
   async close(): Promise<void> {
