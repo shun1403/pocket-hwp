@@ -18,7 +18,7 @@ import {
 import { type LinkInfo, linkAt } from '../doc/ops/links';
 import { type SpecialHit, specialAt } from '../doc/ops/notes';
 import { memoCount, memoRanges } from '../doc/ops/memos';
-import { type PageObject, objectAt } from '../doc/ops/objects';
+import { type PageObject, copyObject, deleteObject, objectAt, tableObjectAt } from '../doc/ops/objects';
 import { cellContext, tableCells } from '../doc/ops/table';
 import { HwpDocument } from '../engine/rhwp';
 import { haptic } from '../platform/files';
@@ -87,6 +87,8 @@ export class Editor {
   private readonly disposer = new AbortController();
   /** 도구 패널이 키보드 자리를 쓰는 동안: 선택해도 키보드를 올리지 않는다 */
   keyboardSuppressed = false;
+  /** 엔진 안 클립보드에 개체를 복사하며 시스템 클립보드에 넣은 표식 글 */
+  private controlMarker: string | null = null;
   private caretHandle = false;
   private object: PageObject | null = null;
 
@@ -100,12 +102,8 @@ export class Editor {
       composing: (t) => this.showComposition(t),
       key: (e) => this.handleKey(e),
       copy: () => this.clipboardData(),
-      cut: () => {
-        const data = this.clipboardData();
-        if (data && this.mode === 'edit') this.backspace();
-        return data;
-      },
-      paste: (t, html) => (html ? this.pasteHtml(html, t) : this.insertText(t)),
+      cut: () => this.cutClipboard(),
+      paste: (t, html) => this.paste(t, html),
     });
     host.append(this.view.scroller, this.input.el);
     this.view.onLayout = () => this.paint(false);
@@ -294,7 +292,14 @@ export class Editor {
     const obj = this.object;
     if (!obj) return;
     this.object = null;
-    this.command((doc) => fn(doc, obj));
+    const body = { sec: obj.sec, para: obj.para, offset: 0 };
+    this.caret ??= body;
+    // 표를 지우면 그 안에 있던 캐럿을 표가 있던 문단으로 옮긴다.
+    const inTable = obj.kind === 'table' && inCell(this.caret) && this.caret.sec === obj.sec && this.caret.para === obj.para;
+    this.command((doc) => {
+      fn(doc, obj);
+      return inTable ? body : undefined;
+    });
   }
 
   private onDoubleTap(x: number, y: number): void {
@@ -323,6 +328,8 @@ export class Editor {
     } else if (this.anchor && sameContainer(this.anchor, pos)) {
       this.caret = pos;
     }
+    if (phase === 'move') this.edgeScroll(x, y, (cx, cy) => this.onMouseDrag(cx, cy, 'move'));
+    else this.stopEdgeScroll();
     this.paint(phase === 'end');
     if (phase === 'end' && this.mode === 'edit' && !this.keyboardSuppressed) this.input.focus();
   }
@@ -365,6 +372,7 @@ export class Editor {
         this.paint(false);
         return;
       }
+      this.edgeScroll(clientX, clientY, onMove);
       if (!this.anchor || !sameContainer(pos, this.anchor) || samePos(pos, this.anchor)) return;
       this.caret = pos;
       this.paint(false);
@@ -372,6 +380,7 @@ export class Editor {
     const onEnd = () => {
       if (!this.dragging) return;
       this.dragging = null;
+      this.stopEdgeScroll();
       this.paint(false);
     };
     for (const side of ['start', 'end', 'caret'] as const) {
@@ -402,9 +411,42 @@ export class Editor {
     window.addEventListener('pointerup', onEnd, { signal });
   }
 
+  private edge = { frame: 0, x: 0, y: 0, move: null as ((x: number, y: number) => void) | null };
+
+  /**
+   * 손잡이·마우스로 고르다가 화면 위·아래 끝에 닿으면 문서를 굴리면서 계속 넓힌다.
+   * 끝에 가까울수록 빨리 굴린다.
+   */
+  private edgeScroll(x: number, y: number, move: (x: number, y: number) => void): void {
+    Object.assign(this.edge, { x, y, move });
+    if (this.edge.frame) return;
+    const tick = () => {
+      // run 안에서 다시 불린 edgeScroll 이 고리를 하나 더 만들지 않도록 frame 은 끝에서 바꾼다.
+      const { move: run, x: cx, y: cy } = this.edge;
+      if (!run) return void (this.edge.frame = 0);
+      const box = this.view.scroller.getBoundingClientRect();
+      // 아래쪽은 가상 키보드·빠른 도구 줄에 가리므로 보이는 화면 기준으로 넉넉히 잡는다.
+      const bottom = Math.min(box.bottom, window.visualViewport?.height ?? box.bottom) - 72;
+      const top = box.top + 40;
+      const dy = cy > bottom ? Math.min(40, (cy - bottom) / 2 + 4) : cy < top ? -Math.min(40, (top - cy) / 2 + 4) : 0;
+      if (!dy) return void (this.edge.frame = 0);
+      this.view.scroller.scrollBy(0, dy);
+      run(cx, cy);
+      this.edge.frame = requestAnimationFrame(tick);
+    };
+    this.edge.frame = requestAnimationFrame(tick);
+  }
+
+  private stopEdgeScroll(): void {
+    cancelAnimationFrame(this.edge.frame);
+    this.edge.frame = 0;
+    this.edge.move = null;
+  }
+
   /** 문서를 닫을 때 호출: 창 이벤트를 떼고 실행 취소 스냅샷을 해제한다. */
   destroy(): void {
     window.clearTimeout(this.viewTapTimer);
+    this.stopEdgeScroll();
     this.disposer.abort();
     this.history?.reset();
     this.history = null;
@@ -756,11 +798,56 @@ export class Editor {
     return sel && this.doc ? this.doc.textBetween(sel[0], sel[1]) : '';
   }
 
-  /** Ctrl+C·X 로 클립보드에 넣을 글과 HTML. 고른 글이 없으면 null */
+  /**
+   * Ctrl+C·X 로 클립보드에 넣을 글과 HTML. 고른 글이 없으면 null.
+   * 표·그림을 통째로 골랐으면 엔진 안 클립보드에 복사하고 표식 글('[표]')만 넣는다.
+   */
   clipboardData(): { text: string; html: string | null } | null {
+    if (this.object && this.doc) {
+      const marker = copyObject(this.doc, this.object);
+      this.controlMarker = marker;
+      return marker ? { text: marker, html: null } : null;
+    }
     const sel = this.selection;
     if (!sel || !this.doc) return null;
     return { text: this.doc.textBetween(sel[0], sel[1]), html: this.doc.htmlBetween(sel[0], sel[1]) };
+  }
+
+  /** 잘라내기: 클립보드에 넣을 것을 돌려주고 고른 글·개체를 지운다. */
+  cutClipboard(): { text: string; html: string | null } | null {
+    const data = this.clipboardData();
+    if (!data || this.mode !== 'edit') return data;
+    if (this.object) this.objectCommand((doc, o) => deleteObject(doc, o));
+    else this.backspace();
+    return data;
+  }
+
+  /** 붙여넣기. 방금 복사한 표·그림의 표식 글이면 개체를 통째로 붙인다. */
+  paste(text: string, html: string | null): void {
+    if (this.mode !== 'edit') return;
+    if (this.controlMarker && text === this.controlMarker && this.caret && !inCell(this.caret)) {
+      const at = this.caret;
+      const pasted = this.edit(null, () => {
+        const next = this.doc!.pasteControl(at);
+        if (!next) throw new Error('control paste failed');
+        return next;
+      });
+      if (pasted) return;
+    }
+    if (html) this.pasteHtml(html, text);
+    else if (text) this.insertText(text);
+  }
+
+  /** 캐럿이 든 표를 통째로 고른다 (복사·잘라내기·지우기). 표 안이 아니면 false */
+  selectTable(): boolean {
+    const obj = this.caret && this.doc ? tableObjectAt(this.doc, this.caret) : null;
+    if (!obj) return false;
+    this.input.commitComposition();
+    this.input.blur();
+    this.anchor = null;
+    this.object = obj;
+    this.paint(false);
+    return true;
   }
 
   clearSelection(): void {
@@ -880,6 +967,11 @@ export class Editor {
    */
   handleKey(e: KeyboardEvent): boolean {
     const name = keyName(e);
+    if (this.object && this.mode === 'edit' && (name === 'Delete' || name === 'Backspace')) {
+      this.objectCommand((doc, o) => deleteObject(doc, o));
+      return true;
+    }
+    if (this.object && name === 'Escape') return this.clearObject(), true;
     const word = e.ctrlKey || e.metaKey;
     const moves: Record<string, Move> = {
       ArrowLeft: word ? 'wordLeft' : 'left',

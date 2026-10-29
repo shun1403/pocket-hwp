@@ -143,7 +143,23 @@ export class EditableDocument {
         : this.raw.getSelectionRects(s.sec, s.para, s.offset, e.para, e.offset);
       return parse<PageRect[]>(json);
     } catch {
-      return [];
+      // 엔진이 범위 전체를 못 재면(개체가 낀 문단 등) 문단마다 따로 재어 보이는 만큼은 보여 준다.
+      const rects: PageRect[] = [];
+      for (let p = innerPara(s); p <= innerPara(e); p += 1) {
+        const at = withInnerPara(s, p, 0);
+        const from = p === innerPara(s) ? s.offset : 0;
+        const to = p === innerPara(e) ? e.offset : this.paraLength(at);
+        if (to <= from) continue;
+        try {
+          const json = inCell(at)
+            ? this.raw.getSelectionRectsInCellByPath(at.sec, at.para, cellPathJson(at), p, from, p, to)
+            : this.raw.getSelectionRects(at.sec, p, from, p, to);
+          rects.push(...parse<PageRect[]>(json));
+        } catch {
+          // 이 문단은 건너뛴다.
+        }
+      }
+      return rects;
     }
   }
 
@@ -295,6 +311,17 @@ export class EditableDocument {
         const outer = s.cellPath[0];
         this.raw.applyParaFormatInCell(s.sec, s.para, outer.controlIndex, outer.cellIndex, p, json);
       }
+    }
+  }
+
+  /** 엔진 안 클립보드에 복사해 둔 개체(표·그림·도형)를 붙인다. 본문에만 된다. 못 붙이면 null */
+  pasteControl(pos: DocPos): DocPos | null {
+    if (inCell(pos) || !this.raw.clipboardHasControl()) return null;
+    try {
+      const r = parse<{ ok: boolean; paraIdx?: number }>(this.raw.pasteControl(pos.sec, pos.para, pos.offset));
+      return r.ok ? { sec: pos.sec, para: r.paraIdx ?? pos.para, offset: 0 } : null;
+    } catch {
+      return null;
     }
   }
 

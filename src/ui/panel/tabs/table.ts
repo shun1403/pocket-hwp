@@ -21,6 +21,7 @@ import {
 } from '../../../doc/ops/table';
 import { askConfirm, askText } from '../../dialog';
 import { toast } from '../../toast';
+import { copyText } from '../../../platform/clipboard';
 import { h } from '../../dom';
 import { Bindings, chips, section, stepper, swatches, tiles } from '../controls';
 import type { PanelContext, TabDef } from '../context';
@@ -40,6 +41,13 @@ export const tableTab: TabDef = {
         return cell ? tableOp(doc, cell, op) : undefined;
       });
     const disabled = () => !cellOf(ctx);
+    const copyTable = async (cut: boolean) => {
+      if (!ed.selectTable()) return;
+      const data = cut ? ed.cutClipboard() : ed.clipboardData();
+      if (!cut) ed.clearObject();
+      const ok = !!data && (await copyText(data.text));
+      toast(ok ? (cut ? '표를 잘라냈어요. 붙여 넣을 곳에서 붙여넣기를 누르세요.' : '표를 복사했어요. 붙여 넣을 곳에서 붙여넣기를 누르세요.') : '표를 복사하지 못했어요.');
+    };
     // 여러 칸 고르기: 캐럿 칸에서 아래로 rows줄, 오른쪽으로 cols칸
     let rows = 1;
     let cols = 1;
@@ -106,6 +114,14 @@ export const tableTab: TabDef = {
     const el = h(
       'div.tab-body',
       {},
+      section(
+        '표 전체',
+        tiles(b, [
+          { label: '표 고르기', icon: 'table', onClick: () => void ed.selectTable(), disabled },
+          { label: '표 복사', icon: 'copy', onClick: () => void copyTable(false), disabled },
+          { label: '표 잘라내기', icon: 'cut', onClick: () => void copyTable(true), disabled },
+        ]),
+      ),
       section(
         '줄',
         tiles(b, [
