@@ -35,6 +35,20 @@ const size = (a: ShortcutActions, dir: 1 | -1) => {
   const pt = (a.editor.currentChar().fontSize ?? 1000) / 100;
   a.editor.applyChar({ fontSize: nextFontSize(pt, dir) * 100 });
 };
+/** 한글처럼 한 번에 자간·장평 1%씩 (모든 언어에 같이) */
+const charStep = (key: 'spacings' | 'ratios', dir: 1 | -1) => (a: ShortcutActions) => {
+  const [min, max, base] = key === 'spacings' ? [-50, 50, 0] : [50, 200, 100];
+  const now = a.editor.currentChar()[key]?.[0] ?? base;
+  const next = Math.min(max, Math.max(min, now + dir));
+  a.editor.applyChar({ [key]: Array.from({ length: 7 }, () => next) });
+};
+/** 줄 간격 10%씩 (비율이 아니던 문단은 160%에서 시작) */
+const lineStep = (dir: 1 | -1) => (a: ShortcutActions) => {
+  const caret = a.editor.caretPos;
+  const para = caret ? (a.editor.document?.paraProps(caret) ?? {}) : {};
+  const now = para.lineSpacingType === 'Percent' ? (para.lineSpacing ?? 160) : 160;
+  a.editor.applyPara({ lineSpacing: Math.min(500, Math.max(50, now + dir * 10)), lineSpacingType: 'Percent' });
+};
 const align = (alignment: NonNullable<ParaProps['alignment']>) => (a: ShortcutActions) => a.editor.applyPara({ alignment });
 const toggle = (key: 'bold' | 'italic' | 'underline' | 'strikethrough') => (a: ShortcutActions) =>
   a.editor.applyChar({ [key]: !a.editor.currentChar()[key] });
@@ -73,9 +87,15 @@ const SHORTCUTS: Shortcut[] = [
   { keys: ['Ctrl+U', 'Alt+Shift+U'], label: '밑줄', group: '글자', edit: true, run: toggle('underline') },
   { keys: ['Ctrl+]', 'Alt+Shift+E'], label: '글자 크게', group: '글자', edit: true, run: (a) => size(a, 1) },
   { keys: ['Ctrl+[', 'Alt+Shift+R'], label: '글자 작게', group: '글자', edit: true, run: (a) => size(a, -1) },
+  { keys: ['Alt+Shift+W'], label: '자간 넓게 (1%)', group: '글자', edit: true, run: charStep('spacings', 1) },
+  { keys: ['Alt+Shift+N'], label: '자간 좁게 (1%)', group: '글자', edit: true, run: charStep('spacings', -1) },
+  { keys: ['Alt+Shift+K'], label: '장평 넓게 (1%)', group: '글자', edit: true, run: charStep('ratios', 1) },
+  { keys: ['Alt+Shift+J'], label: '장평 좁게 (1%)', group: '글자', edit: true, run: charStep('ratios', -1) },
 
   { keys: ['Alt+T'], label: '문단 모양', group: '문단', run: (a) => a.panel('para') },
   { keys: ['F6'], label: '스타일', group: '문단', run: (a) => a.panel('style') },
+  { keys: ['Alt+Shift+A'], label: '줄 간격 넓게 (10%)', group: '문단', edit: true, run: lineStep(1) },
+  { keys: ['Alt+Shift+Z'], label: '줄 간격 좁게 (10%)', group: '문단', edit: true, run: lineStep(-1) },
   { keys: ['Ctrl+Shift+L'], label: '왼쪽 정렬', group: '문단', edit: true, run: align('left') },
   { keys: ['Ctrl+Shift+C'], label: '가운데 정렬', group: '문단', edit: true, run: align('center') },
   { keys: ['Ctrl+Shift+R'], label: '오른쪽 정렬', group: '문단', edit: true, run: align('right') },

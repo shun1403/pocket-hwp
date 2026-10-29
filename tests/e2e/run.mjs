@@ -1107,6 +1107,13 @@ await step('단축키: 한글 입력 상태의 Ctrl+B, 정렬, 낱말 이동, �
   assert.equal(await editor((ed) => ed.doc.charProps({ sec: 0, para: 0, offset: 1 }).bold), true);
   await press('Process', 'KeyC', { ctrlKey: true, shiftKey: true });
   assert.equal(await editor((ed) => ed.doc.paraProps({ sec: 0, para: 0, offset: 0 }).alignment), 'center');
+  // 자간(Alt+Shift+W/N)·장평(K/J) 1%씩, 줄 간격(A/Z) 10%씩
+  for (const code of ['KeyW', 'KeyW', 'KeyN', 'KeyW', 'KeyK', 'KeyJ', 'KeyJ', 'KeyA', 'KeyA', 'KeyZ'])
+    await press('ㅈ', code, { altKey: true, shiftKey: true });
+  const props = await editor((ed) => ({ c: ed.doc.charProps({ sec: 0, para: 0, offset: 1 }), p: ed.doc.paraProps({ sec: 0, para: 0, offset: 0 }) }));
+  assert.equal(props.c.spacings[0], 2);
+  assert.equal(props.c.ratios[0], 99);
+  assert.equal(props.p.lineSpacing, 170);
   // Ctrl+→ 는 낱말 단위로 옮긴다.
   await page.keyboard.press('Home');
   await page.keyboard.press('Control+ArrowRight');
