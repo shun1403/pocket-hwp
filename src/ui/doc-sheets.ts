@@ -1,11 +1,13 @@
 import type { DocumentSession } from '../app/session';
 import { engineVersion } from '../engine/rhwp';
 import { documentText, exportDocument, exportPdf } from '../export/exporters';
+import { parsePageRange, renderPagesPng } from '../export/images';
 import { printDocument } from '../export/print';
+import { buildZip } from '../export/zip';
 import { MIME, type DocFormat, baseName } from '../platform/bytes';
-import { isNative, shareFile } from '../platform/files';
+import { type OutgoingFile, isNative, shareFile, shareFiles } from '../platform/files';
 import type { PageView } from '../view/page-view';
-import { askConfirm, askText } from './dialog';
+import { askConfirm, askPassword, askText } from './dialog';
 import { h } from './dom';
 import { icon } from './icons';
 import { Sheet } from './sheet';
@@ -49,7 +51,6 @@ export async function saveToOriginal(session: DocumentSession): Promise<boolean>
   }
 }
 
-/** 보내기(공유)·내보내기 선택지 */
 /** 쪽마다 그리는 동안 진행 상황을 보여 주며 인쇄한다. */
 export async function printWithProgress(session: DocumentSession): Promise<void> {
   const progress = h('div.progress-toast', {}, '인쇄 준비 중…');
@@ -63,7 +64,67 @@ export async function printWithProgress(session: DocumentSession): Promise<void>
   }
 }
 
-export function openExportSheet(session: DocumentSession): void {
+/** 쪽을 사진(PNG)으로 보낸다: 모든 쪽 · 지금 쪽 · 쪽 고르기 */
+async function sendImages(session: DocumentSession, currentPage: number): Promise<void> {
+  const raw = session.doc.raw;
+  const total = raw.pageCount();
+  const pages = await new Promise<number[] | null>((resolve) => {
+    let picked: number[] | null = null;
+    // '쪽 골라서'는 이 시트를 닫고 쪽 번호를 따로 물은 뒤에 답한다.
+    let askLater = false;
+    const sheet = new Sheet({ title: '사진으로 보내기', onClose: () => !askLater && resolve(picked) });
+    const choose = (p: number[] | null) => () => {
+      picked = p;
+      sheet.close();
+    };
+    const all = Array.from({ length: total }, (_, i) => i);
+    const rows: HTMLElement[] = [
+      h('p.sheet-note', {}, '쪽마다 사진 한 장으로 보내요. 한글이 없는 사람도 바로 볼 수 있어요.'),
+      h('button.sheet-row', { onclick: choose(all) }, icon('pages'), h('span', {}, `모든 쪽 (${total}장)`)),
+    ];
+    if (total > 1) {
+      rows.push(
+        h('button.sheet-row', { onclick: choose([currentPage]) }, icon('page'), h('span', {}, `지금 보는 쪽만 (${currentPage + 1}쪽)`)),
+        h(
+          'button.sheet-row',
+          {
+            onclick: async () => {
+              askLater = true;
+              sheet.close();
+              const input = await askText('보낼 쪽', `1-${total}`, '보내기', { message: `쪽 번호를 쓰세요. 예) 1-3, 5 (전체 ${total}쪽)` });
+              const range = input ? parsePageRange(input, total) : null;
+              if (input && !range) toast(`쪽 번호를 다시 확인해 주세요. 1부터 ${total}까지 쓸 수 있어요.`);
+              resolve(range);
+            },
+          },
+          icon('list'),
+          h('span', {}, '쪽 골라서…'),
+        ),
+      );
+    }
+    sheet.body.append(...rows);
+    sheet.open();
+  });
+  if (!pages || pages.length === 0) return;
+  if (pages.length > 20 && !(await askConfirm({ title: '사진이 많아요', message: `${pages.length}장을 만들어요. 시간이 조금 걸리고 메신저에서 나뉘어 보내질 수 있어요.`, confirmLabel: '만들기' }))) return;
+  const progress = h('div.progress-toast', {}, '사진 만드는 중…');
+  document.body.append(progress);
+  try {
+    const images = await renderPagesPng(raw, pages, (done, n) => {
+      progress.textContent = `사진 만드는 중… ${done}/${n}`;
+    });
+    const base = baseName(session.name);
+    const width = String(Math.max(...pages) + 1).length;
+    const files: OutgoingFile[] = images.map((bytes, i) => ({ name: `${base}-${String(pages[i] + 1).padStart(width, '0')}.png`, bytes, mime: 'image/png' }));
+    const result = await shareFiles(files, () => ({ name: `${base}-사진.zip`, bytes: buildZip(files), mime: 'application/zip' }));
+    if (result === 'downloaded') toast(files.length > 1 ? `사진 ${files.length}장을 ZIP으로 내려받았어요.` : `${files[0].name} 파일을 내려받았어요.`);
+  } finally {
+    progress.remove();
+  }
+}
+
+/** 보내기(공유)·내보내기 선택지. currentPage 는 '지금 쪽만' 사진으로 보낼 때 쓴다. */
+export function openExportSheet(session: DocumentSession, currentPage = 0): void {
   const sheet = new Sheet({ title: '보내기' });
   const row = (iconName: Parameters<typeof icon>[0], title: string, sub: string, run: () => Promise<void>) =>
     h(
@@ -97,13 +158,11 @@ export function openExportSheet(session: DocumentSession): void {
   sheet.body.append(
     row('share', '한글 문서 (.hwp)', '한컴오피스·다른 앱에서 열 수 있어요', () => sendDocument(session, 'hwp')),
     row('share', 'HWPX 문서 (.hwpx)', '개방형 한글 형식 (실험적)', () => sendDocument(session, 'hwpx')),
-    row('lock', '암호 건 한글 문서 (.hwp)', '열 때 암호를 물어요', async () => {
-      const password = await askText('문서 암호', '', '암호 걸어 보내기', {
-        secret: true,
-        message: '받는 사람이 이 암호를 알아야 열 수 있어요. 암호는 앱에 저장하지 않아요.',
-      });
-      if (password) await sendDocument(session, 'hwp', password);
+    row('lock', '암호 건 한글 문서', '열 때 암호를 물어요 (.hwp·.hwpx)', async () => {
+      const choice = await askPassword();
+      if (choice) await sendDocument(session, choice.format, choice.password);
     }),
+    row('image', '사진 (.png)', '쪽마다 사진으로 · 한글이 없어도 보여요', () => sendImages(session, currentPage)),
     row('download', 'PDF', '쪽 모양 그대로 보내기', async () => {
       const progress = h('div.progress-toast', {}, 'PDF 만드는 중…');
       document.body.append(progress);

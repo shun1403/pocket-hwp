@@ -54,6 +54,17 @@ describe('문단 번호', () => {
 describe('documentStats', () => {
   it('글자·낱말·문단을 센다', () => {
     const s = documentStats('가나 다\n\nabc', 2);
-    expect(s).toEqual({ chars: 7, charsNoSpace: 6, words: 3, paragraphs: 2, pages: 2 });
+    expect(s).toMatchObject({ chars: 7, charsNoSpace: 6, words: 3, paragraphs: 2, pages: 2 });
+  });
+
+  it('바이트(한글 2·3바이트)와 원고지 매수를 센다', () => {
+    const s = documentStats('가나 다\n\nabc', 1);
+    expect(s.bytes2).toBe(2 * 3 + 1 + 3);
+    expect(s.bytes3).toBe(3 * 3 + 1 + 3);
+    // 문단 두 개 → 두 줄 → 한 장
+    expect(s.sheets).toBe(1);
+    // 들여쓰기 1칸 + 199자 = 200칸 = 10줄 → 한 장, 1자 더하면 11줄 → 두 장
+    expect(documentStats('가'.repeat(199), 1).sheets).toBe(1);
+    expect(documentStats('가'.repeat(200), 1).sheets).toBe(2);
   });
 });

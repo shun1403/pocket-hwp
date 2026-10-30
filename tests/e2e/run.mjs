@@ -371,10 +371,53 @@ let locked;
 await step('암호 건 HWP로 보내기', async () => {
   await page.click('[aria-label="보내기"]');
   await page.click('.sheet-row:has-text("암호 건")');
-  await page.fill('.sheet.open .text-field[type="password"]', 'pocket123');
+  const pw = (i) => `.sheet.open .text-field[type="password"] >> nth=${i}`;
+  // 짧거나 두 번이 다르면 막는다.
+  await page.fill(pw(0), 'abc');
+  await page.click('.sheet.open .dialog-form button[type="submit"]');
+  await page.waitForSelector('.dialog-error:has-text("5자 이상")');
+  await page.fill(pw(0), 'pocket123');
+  await page.fill(pw(1), 'pocket124');
+  await page.click('.sheet.open .dialog-form button[type="submit"]');
+  await page.waitForSelector('.dialog-error:has-text("두 암호가 달라요")');
+  await page.fill(pw(1), 'pocket123');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('.sheet.open .dialog-form button[type="submit"]')]);
+  assert.match(download.suggestedFilename(), /\.hwp$/);
   locked = await readFile(await download.path());
   assert.equal(locked.subarray(0, 4).toString('hex'), 'd0cf11e0');
+});
+
+await step('암호 건 HWPX로도 보낸다', async () => {
+  await page.click('[aria-label="보내기"]');
+  await page.click('.sheet-row:has-text("암호 건")');
+  await page.fill('.sheet.open .text-field[type="password"] >> nth=0', 'pocket123');
+  await page.fill('.sheet.open .text-field[type="password"] >> nth=1', 'pocket123');
+  await page.click('.sheet.open .chip-btn:has-text("HWPX")');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('.sheet.open .dialog-form button[type="submit"]')]);
+  assert.match(download.suggestedFilename(), /\.hwpx$/);
+  const bytes = await readFile(await download.path());
+  assert.equal(bytes.subarray(0, 2).toString(), 'PK');
+});
+
+await step('사진으로 보내기: 지금 쪽은 PNG 한 장, 여러 쪽은 ZIP', async () => {
+  await page.click('[aria-label="보내기"]');
+  await page.click('.sheet-row:has-text("사진")');
+  const pages = await editor((ed) => ed.doc.pageCount());
+  if (pages > 1) {
+    const [one] = await Promise.all([page.waitForEvent('download'), page.click('.sheet.open .sheet-row:has-text("지금 보는 쪽만")')]);
+    const png = await readFile(await one.path());
+    assert.equal(png.subarray(1, 4).toString(), 'PNG');
+    await page.click('[aria-label="보내기"]');
+    await page.click('.sheet-row:has-text("사진")');
+  }
+  const [all] = await Promise.all([page.waitForEvent('download'), page.click('.sheet.open .sheet-row:has-text("모든 쪽")')]);
+  const bytes = await readFile(await all.path());
+  if (pages > 1) {
+    assert.match(all.suggestedFilename(), /사진\.zip$/);
+    assert.equal(bytes.subarray(0, 2).toString(), 'PK');
+  } else {
+    assert.equal(bytes.subarray(1, 4).toString(), 'PNG');
+  }
 });
 
 await step('PDF로 보내기', async () => {
@@ -1244,6 +1287,29 @@ await step('손잡이를 화면 아래 끝까지 끌면 문서가 따라 내려�
   assert.equal(s.anchor, 0);
   assert.ok(s.para > 25, JSON.stringify(s));
   assert.ok(s.rects > 25, JSON.stringify(s));
+});
+
+await step('글자 수: 고른 글은 상태 줄에, 보기 탭에 바이트·원고지·목표 글자 수', async () => {
+  await newDoc();
+  await page.keyboard.type('자기소개서 첫 문장입니다');
+  await page.keyboard.press('Shift+Home');
+  await page.waitForFunction(() => document.querySelector('.app-status')?.textContent === '고른 글 13자 · 공백 빼고 11자');
+  await page.keyboard.press('End');
+  await page.waitForFunction(() => !document.querySelector('.app-status')?.textContent?.startsWith('고른 글'));
+  await openTab('보기');
+  const stats = await page.textContent('.panel-body .doc-stats');
+  assert.match(stats, /바이트 \(한글 2바이트\)\s*24/);
+  assert.match(stats, /바이트 \(한글 3바이트·UTF-8\)\s*35/);
+  assert.match(stats, /원고지 \(200자, 대략\)\s*1장/);
+  await page.fill('.panel-body .goal-input', '20');
+  await page.waitForSelector('.panel-body .goal-text:has-text("13 / 20자 (공백 포함) · 7자 남았어요")');
+  await page.click('.panel-body .chip-btn:has-text("공백 빼고")');
+  await page.waitForSelector('.panel-body .goal-text:has-text("11 / 20자 (공백 빼고) · 9자 남았어요")');
+  // 고친 뒤에는 다시 센다.
+  await page.click('.qb.qb-kb');
+  await page.keyboard.type(' 그리고 더 긴 글을 덧붙입니다');
+  await openTab('보기');
+  await page.waitForSelector('.panel-body .goal-text:has-text("넘었어요")');
 });
 
 await step('페이지 오류가 없다', async () => {

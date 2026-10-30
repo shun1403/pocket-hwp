@@ -1,6 +1,6 @@
 {
   "name": "pocket-hwp",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "private": true,
   "description": "모바일(Android/iOS)에 맞춘 오픈소스 한글(HWP/HWPX) 문서 뷰어·편집기",
   "license": "MIT",
