@@ -26,6 +26,7 @@ const PATHS = {
   folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
   book: 'M2 5h6a4 4 0 0 1 4 4v11a3 3 0 0 0-3-3H2zM22 5h-6a4 4 0 0 0-4 4v11a3 3 0 0 1 3-3h7z',
   pages: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
+  page: 'M6 3h9l4 4v14H6zM14 3v5h5',
   keyboard: 'M3 5h18v10H3zM7 9h.01M11 9h.01M15 9h.01M8 12h8M9 19l3 3 3-3',
   alignLeft: 'M4 6h16M4 10h10M4 14h16M4 18h10',
   alignCenter: 'M4 6h16M7 10h10M4 14h16M7 18h10',

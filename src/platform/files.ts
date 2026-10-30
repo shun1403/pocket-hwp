@@ -67,6 +67,57 @@ export async function shareFile(name: string, bytes: Uint8Array, mime: string): 
   return 'downloaded';
 }
 
+export interface OutgoingFile {
+  name: string;
+  bytes: Uint8Array;
+  mime: string;
+}
+
+/**
+ * 여러 파일을 한 번에 보낸다(쪽마다 그린 사진 등). 공유 시트가 여러 파일을 못 받는 컴퓨터에서는
+ * zip 으로 묶어 내려받는다(묶는 함수는 부르는 쪽이 넘긴다).
+ */
+export async function shareFiles(
+  files: OutgoingFile[],
+  zip: () => OutgoingFile,
+): Promise<'shared' | 'downloaded' | 'cancelled'> {
+  if (files.length === 1) return shareFile(files[0].name, files[0].bytes, files[0].mime);
+  if (isNative) {
+    const [{ Filesystem, Directory }, { Share }] = await Promise.all([
+      import('@capacitor/filesystem'),
+      import('@capacitor/share'),
+    ]);
+    const uris: string[] = [];
+    for (const f of files) {
+      const written = await Filesystem.writeFile({
+        path: `share/${safeFileName(f.name)}`,
+        data: bytesToBase64(f.bytes),
+        directory: Directory.Cache,
+        recursive: true,
+      });
+      uris.push(written.uri);
+    }
+    try {
+      await Share.share({ files: uris, dialogTitle: '보내기' });
+      return 'shared';
+    } catch {
+      return 'cancelled';
+    }
+  }
+  const list = files.map((f) => new File([f.bytes as BlobPart], safeFileName(f.name), { type: f.mime }));
+  if (navigator.canShare?.({ files: list }) && matchMedia('(pointer: coarse)').matches) {
+    try {
+      await navigator.share({ files: list });
+      return 'shared';
+    } catch (err) {
+      if ((err as DOMException).name === 'AbortError') return 'cancelled';
+    }
+  }
+  const packed = zip();
+  downloadFile(packed.name, packed.bytes, packed.mime);
+  return 'downloaded';
+}
+
 export function downloadFile(name: string, bytes: Uint8Array, mime: string): void {
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
   const a = document.createElement('a');

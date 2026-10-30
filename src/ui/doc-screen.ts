@@ -7,6 +7,7 @@ import { isNative } from '../platform/files';
 import { askText } from './dialog';
 import { openExportSheet, openInfoSheet, openPagesSheet, printWithProgress, saveToOriginal } from './doc-sheets';
 import { fieldCount } from '../doc/ops/fields';
+import { documentStats } from '../doc/ops/inserts';
 import { FormFill } from './form-fill';
 import { type VersionActions, openVersionsSheet } from './versions-sheet';
 import {
@@ -59,6 +60,7 @@ export class DocScreen {
   private editBack: { dismiss: () => void } | null = null;
   private searchBack: { dismiss: () => void } | null = null;
   private state: EditorState | null = null;
+  private baseStatus = '';
   private dockTimer = 0;
   private readonly keys: ShortcutActions;
 
@@ -166,7 +168,7 @@ export class DocScreen {
       viewBtn('search', '찾기', '찾기', () => this.openSearch()),
       viewBtn('book', '읽기 모드', '읽기 모드', () => this.openReader()),
       viewBtn('pages', '쪽', '쪽 모아 보기', () => openPagesSheet(this.session, this.editor.view)),
-      viewBtn('share', '보내기', '보내기', () => openExportSheet(this.session)),
+      viewBtn('share', '보내기', '보내기', () => openExportSheet(this.session, this.editor.view.currentPage())),
       h('button.edit-btn', { type: 'button', 'aria-label': '편집하기', onclick: () => this.setEditing(true) }, icon('edit', 20), h('span', {}, '편집')),
     );
     this.el = h(
@@ -212,7 +214,19 @@ export class DocScreen {
   }
 
   private setStatus(text: string): void {
-    this.status.textContent = text;
+    this.baseStatus = text;
+    this.renderStatus();
+  }
+
+  /** 글을 고르면 제목 아래 상태 줄에 고른 글자 수를 보여 준다 (자기소개서 등). */
+  private renderStatus(): void {
+    const text = this.state?.hasSelection ? this.editor.selectedText() : '';
+    if (!text) {
+      this.status.textContent = this.baseStatus;
+      return;
+    }
+    const s = documentStats(text, 0);
+    this.status.textContent = `고른 글 ${s.chars.toLocaleString('ko-KR')}자 · 공백 빼고 ${s.charsNoSpace.toLocaleString('ko-KR')}자`;
   }
 
   // ───────────── 상단 바 ─────────────
@@ -337,6 +351,7 @@ export class DocScreen {
   private onState(s: EditorState): void {
     const historyChanged = s.canUndo !== this.state?.canUndo || s.canRedo !== this.state?.canRedo;
     this.state = s;
+    this.renderStatus();
     this.quickBar.update(s, this.editor.document);
     this.panel.refresh();
     if (historyChanged && s.mode === 'edit') this.renderAppBar();

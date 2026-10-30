@@ -105,12 +105,26 @@ export interface DocStats {
   words: number;
   paragraphs: number;
   pages: number;
+  /** 한글 2바이트(완성형) 기준 바이트 */
+  bytes2: number;
+  /** UTF-8(한글 3바이트) 기준 바이트 */
+  bytes3: number;
+  /** 200자 원고지 매수 (대략: 문단마다 새 줄·첫 칸 들여쓰기) */
+  sheets: number;
 }
 
+/** 글자 수 세기. 줄바꿈(문단 나눔)은 글자·바이트에 넣지 않는다. */
 export function documentStats(text: string, pages: number): DocStats {
-  const paragraphs = text.split('\n').filter((l) => l.trim().length > 0).length;
-  const chars = Array.from(text.replace(/\n/g, '')).length;
+  const lines = text.split('\n');
+  const flat = text.replace(/\n/g, '');
+  const paragraphs = lines.filter((l) => l.trim().length > 0).length;
+  const chars = Array.from(flat).length;
   const charsNoSpace = Array.from(text.replace(/\s/g, '')).length;
   const words = text.split(/\s+/).filter(Boolean).length;
-  return { chars, charsNoSpace, words, paragraphs, pages };
+  const bytes2 = Array.from(flat).reduce((n, ch) => n + (ch.charCodeAt(0) < 0x80 ? 1 : 2), 0);
+  const bytes3 = new TextEncoder().encode(flat).length;
+  // 원고지: 한 줄 20칸, 한 장 10줄. 문단은 새 줄에서 한 칸 들여 쓴다.
+  const rows = lines.filter((l) => l.trim()).reduce((n, l) => n + Math.ceil((Array.from(l).length + 1) / 20), 0);
+  const sheets = Math.ceil(rows / 10);
+  return { chars, charsNoSpace, words, paragraphs, pages, bytes2, bytes3, sheets };
 }

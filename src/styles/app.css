@@ -2428,3 +2428,56 @@ input:focus-visible {
   color: var(--text);
   white-space: nowrap;
 }
+
+/* 암호 걸어 보내기 */
+.dialog-error {
+  margin: 4px 4px 0;
+  color: var(--danger);
+  font-size: 14px;
+}
+.dialog-error:empty {
+  display: none;
+}
+.dialog-form .chips {
+  margin: 8px 2px 0;
+}
+
+/* 글자 수: 고른 글, 목표 글자 수 */
+.stats-label {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.sel-stats {
+  margin-bottom: 10px;
+}
+.goal-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.goal-input {
+  width: 100%;
+}
+.goal-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.goal-fill {
+  height: 100%;
+  width: 0;
+  background: var(--brand);
+  transition: width 0.2s;
+}
+.goal-bar.over .goal-fill {
+  background: var(--danger);
+}
+.goal-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
