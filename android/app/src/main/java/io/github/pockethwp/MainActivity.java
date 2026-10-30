@@ -28,6 +28,8 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // 앱 안에 들어 있는 플러그인: 원래 파일 자리에 다시 저장하기
         registerPlugin(DocumentFilesPlugin.class);
+        // 앱 잠금: 기기 잠금으로 확인, 최근 앱 화면에서 가리기
+        registerPlugin(AppLockPlugin.class);
         setIntent(normalize(getIntent()));
         super.onCreate(savedInstanceState);
     }

@@ -36,6 +36,7 @@ import { type ShortcutActions, openShortcutsSheet, runShortcut } from './shortcu
 import { Sheet } from './sheet';
 import { openAutofill } from './autofill-sheet';
 import { openDatesSheet } from './dates-sheet';
+import { openSpellingSheet } from './spelling-sheet';
 import { toast } from './toast';
 
 /** 한 번 키보드 높이를 못 잰 환경이면 다음부터는 기다리지 않고 바로 위에 붙인다. */
@@ -272,6 +273,10 @@ export class DocScreen {
       row('bookmark', '책갈피', () => openBookmarksSheet(this.editor)),
       row('memo', '메모', () => void openMemosSheet(this.editor)),
       row('calendar', '일정 꺼내기 (캘린더에 넣기)', () => openDatesSheet(this.session)),
+      row('check', '맞춤법 검사', () => {
+        if (this.editor.currentMode !== 'edit') this.setEditing(true, false);
+        openSpellingSheet(this.editor);
+      }),
       row('pages', '쪽 모아 보기', () => openPagesSheet(this.session, this.editor.view)),
       row('zoomFit', '쪽 전체 보기', () => this.editor.view.setZoomFactor(1)),
       row('text', '본문 폭에 맞추기 (글자 크게)', () => this.editor.view.fitBody(window.innerHeight / 2)),

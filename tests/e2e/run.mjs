@@ -1408,6 +1408,72 @@ await step('일정 꺼내기: 문서 속 마감 날짜를 캘린더 파일(.ics)
   assert.match(ics, /SUMMARY:\[마감\]/);
 });
 
+await step('양식으로 만들기: 이력서를 만들고 내 정보로 바로 채운다', async () => {
+  await goHome();
+  await page.click('.template-btn');
+  await page.click('.sheet.open .sheet-row:has-text("이력서")');
+  await page.waitForSelector('.doc .page canvas');
+  assert.equal(await editor((ed) => ed.doc.paraText({ sec: 0, para: 0, offset: 0 }).replace(/\s/g, '')), '이력서');
+  await page.click('[aria-label="더보기"]');
+  await page.click('.sheet-row:has-text("내 정보로 채우기")');
+  await page.waitForSelector('.sheet.open .autofill-row:has-text("홍길동")');
+  await page.click('.sheet.open .dialog-actions .primary-btn');
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+  const text = await editor((ed) => ed.doc.raw.getTextFileText());
+  assert.match(text, /홍길동/);
+  assert.match(text, /010-1234-5678/);
+});
+
+await step('맞춤법 검사: 자주 틀리는 말을 찾아 모두 고치고, 실행 취소로 되돌린다', async () => {
+  await newDoc();
+  await page.keyboard.type('몇일 뒤에 혼자 할수있어요');
+  await page.click('.done-btn');
+  await page.click('[aria-label="더보기"]');
+  await page.click('.sheet-row:has-text("맞춤법 검사")');
+  await page.waitForSelector('.sheet.open .spell-row:has-text("며칠")');
+  assert.equal(await page.$$eval('.sheet.open .spell-row', (els) => els.length), 2);
+  await page.click('.sheet.open .dialog-actions .primary-btn');
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+  assert.equal(await paraText(), '며칠 뒤에 혼자 할 수 있어요');
+  await page.click('[aria-label="실행 취소"]');
+  assert.equal(await paraText(), '몇일 뒤에 혼자 할수있어요');
+});
+
+await step('앱 잠금(웹): PIN을 정하면 다시 열 때 잠기고, PIN으로 열고, 끈다', async () => {
+  await goHome();
+  await page.click('[aria-label="보관함 관리"]');
+  await page.click('.sheet.open .sheet-row:has-text("앱 잠금")');
+  await page.click('.sheet.open .switch-row');
+  await page.waitForSelector('.sheet.open:has-text("앱 PIN 정하기")');
+  await page.fill('.sheet.open input[aria-label="PIN (숫자 4~8자리)"]', '12');
+  await page.fill('.sheet.open input[aria-label="PIN 한 번 더"]', '12');
+  await page.click('.sheet.open .dialog-form button[type="submit"]');
+  await page.waitForSelector('.dialog-error:has-text("숫자 4~8자리")');
+  await page.fill('.sheet.open input[aria-label="PIN (숫자 4~8자리)"]', '2468');
+  await page.fill('.sheet.open input[aria-label="PIN 한 번 더"]', '2468');
+  await page.click('.sheet.open .dialog-form button[type="submit"]');
+  await page.waitForSelector('.toast:has-text("앱 잠금을 켰어요")');
+  // 앱을 다시 열면 잠겨 있다.
+  await page.reload();
+  await page.waitForSelector('.lock-screen .lock-pin');
+  await page.fill('.lock-pin', '1111');
+  await page.click('.lock-form button[type="submit"]');
+  await page.waitForSelector('.lock-screen .dialog-error:has-text("맞지 않아요")');
+  await page.fill('.lock-pin', '2468');
+  await page.click('.lock-form button[type="submit"]');
+  await page.waitForFunction(() => !document.querySelector('.lock-screen'));
+  // 끄려면 지금 PIN을 확인한다.
+  await page.click('[aria-label="보관함 관리"]');
+  await page.click('.sheet.open .sheet-row:has-text("앱 잠금")');
+  await page.click('.sheet.open .switch-row');
+  await page.fill('.sheet.open input[aria-label="지금 PIN"]', '2468');
+  await page.click('.sheet.open .dialog-form button[type="submit"]');
+  await page.waitForSelector('.toast:has-text("앱 잠금을 껐어요")');
+  await page.reload();
+  await page.waitForSelector('.home:not([hidden])');
+  assert.equal(await page.$('.lock-screen'), null);
+});
+
 await step('페이지 오류가 없다', async () => {
   assert.deepEqual(errors, []);
 });

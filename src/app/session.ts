@@ -8,6 +8,7 @@ import { type LibraryEntry, library, newId } from '../platform/library';
 import { searchIndex } from '../platform/search-index';
 import { VERSION_INTERVAL_MS, type DocVersion, versions } from '../platform/versions';
 import { buildSample } from './sample';
+import { type Template, buildTemplate } from './templates';
 
 const AUTOSAVE_DELAY_MS = 1500;
 
@@ -151,6 +152,17 @@ export class DocumentSession {
     raw.free();
     const stamp = new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
     return DocumentSession.open(`새 문서 ${stamp}.hwp`, bytes, { keepOriginal: false });
+  }
+
+  /** 자주 쓰는 양식으로 새 문서 */
+  static async createFromTemplate(t: Template): Promise<DocumentSession> {
+    await initEngine();
+    const raw = HwpDocument.createEmpty();
+    raw.createBlankDocument();
+    buildTemplate(new EditableDocument(raw), t);
+    const bytes = raw.exportHwp();
+    raw.free();
+    return DocumentSession.open(`${t.name}.hwp`, bytes, { keepOriginal: false });
   }
 
   /** 처음 쓰는 사람을 위한 안내 문서 */

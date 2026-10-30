@@ -1,3 +1,4 @@
+import { TEMPLATES, type Template } from '../app/templates';
 import { searchText, type TextHit } from '../doc/text-search';
 import { HwpDocument, initEngine } from '../engine/rhwp';
 import { documentText } from '../export/exporters';
@@ -19,6 +20,8 @@ export interface HomeActions {
   openFile(): void;
   newDocument(): void;
   openSample(): void;
+  /** 자주 쓰는 양식으로 새 문서 */
+  newFromTemplate(t: Template): void;
   /** find 를 주면 문서를 연 뒤 그 글을 찾아 보여 준다 (본문 검색 결과) */
   openEntry(id: string, find?: string): void;
   shareEntry(id: string): void;
@@ -92,6 +95,12 @@ export class HomeScreen {
           h('span.action-sub', {}, '빈 문서로 시작'),
         ),
       ),
+      h(
+        'button.template-btn',
+        { onclick: () => this.openTemplates() },
+        icon('form', 22),
+        h('span.row-text', {}, h('span', {}, '양식으로 만들기'), h('span.row-sub', {}, '이력서 · 자기소개서 · 위임장 · 사직서 · 차용증 …')),
+      ),
       this.notices,
       h('h2.section-title', {}, '최근 문서'),
       this.searchBox,
@@ -156,6 +165,23 @@ export class HomeScreen {
       this.indexing = false;
     }
     if (this.searchBox.value.trim()) this.renderList();
+  }
+
+  /** 자주 쓰는 양식 고르기 */
+  private openTemplates(): void {
+    const sheet = new Sheet({ title: '양식으로 만들기' });
+    sheet.body.append(
+      ...TEMPLATES.map((t) =>
+        h(
+          'button.sheet-row',
+          { onclick: () => (sheet.close(), this.actions.newFromTemplate(t)) },
+          icon('form'),
+          h('span.row-text', {}, h('span', {}, t.name), h('span.row-sub', {}, t.sub)),
+        ),
+      ),
+      h('p.sheet-note', {}, '빈칸은 서식 채우기나 내 정보로 채우기로 바로 채울 수 있어요. 위임장·차용증·내용증명은 일반적인 서식이며 법률 자문이 아니에요.'),
+    );
+    sheet.open();
   }
 
   private renderList(): void {

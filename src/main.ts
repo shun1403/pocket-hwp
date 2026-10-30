@@ -11,6 +11,7 @@ import { askText } from './ui/dialog';
 import { DocScreen } from './ui/doc-screen';
 import { h } from './ui/dom';
 import { HomeScreen } from './ui/home';
+import { AppLockGuard } from './ui/lock-screen';
 import { icon } from './ui/icons';
 import { Sheet } from './ui/sheet';
 import { toast } from './ui/toast';
@@ -24,6 +25,7 @@ const home = new HomeScreen({
   openFile: () => void chooseFile(),
   newDocument: () => void withLoading(() => DocumentSession.createBlank(), true),
   openSample: () => void withLoading(() => DocumentSession.createSample()),
+  newFromTemplate: (t) => void withLoading(() => DocumentSession.createFromTemplate(t)),
   openEntry: (id, find) => void withLoading((pw) => DocumentSession.openEntry(id, pw), false, find),
   shareEntry: (id) => void shareEntry(id),
   about: () => openAbout(),
@@ -32,6 +34,8 @@ home.onDropFile = (file) => void openBytes(file.name, file.arrayBuffer());
 app.append(home.el);
 void home.refresh();
 
+// 앱 잠금을 켜 두었으면 문서보다 먼저 잠금 화면을 띄운다.
+new AppLockGuard().start();
 trackKeyboard();
 // 앱이 백그라운드로 가거나 탭이 숨겨질 때 바로 저장한다.
 document.addEventListener('visibilitychange', () => {
