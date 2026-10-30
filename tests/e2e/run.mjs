@@ -1312,6 +1312,67 @@ await step('글자 수: 고른 글은 상태 줄에, 보기 탭에 바이트·�
   await page.waitForSelector('.panel-body .goal-text:has-text("넘었어요")');
 });
 
+await step('내 정보로 채우기: 처음엔 내 정보를 쓰고, 찾은 칸을 한 번에 채우고, 실행 취소로 되돌린다', async () => {
+  await newDoc();
+  await page.keyboard.type('성명 : ______    연락처 : ______');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('20  년    월    일');
+  await page.click('[aria-label="완료"], .done-btn');
+  await page.click('[aria-label="더보기"]');
+  await page.click('.sheet-row:has-text("내 정보로 채우기")');
+  // 저장한 내 정보가 없으면 먼저 쓴다.
+  await page.waitForSelector('.sheet.open .profile-form');
+  await page.fill('.sheet.open input[aria-label="이름"]', '홍길동');
+  await page.fill('.sheet.open input[aria-label="휴대전화"]', '010-1234-5678');
+  await page.click('.sheet.open .profile-form button[type="submit"]');
+  await page.waitForSelector('.sheet.open .autofill-row');
+  const rows = await page.$$eval('.sheet.open .autofill-row', (els) => els.map((e) => e.textContent));
+  assert.ok(rows.some((r) => /성명.*홍길동/.test(r)), rows.join(' | '));
+  assert.ok(rows.some((r) => /연락처.*010-1234-5678/.test(r)), rows.join(' | '));
+  assert.ok(rows.some((r) => /날짜.*년.*월.*일/.test(r)), rows.join(' | '));
+  await page.click('.sheet.open .dialog-actions .primary-btn');
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+  const para = (i) => editor((ed, i) => ed.doc.paraText({ sec: 0, para: i, offset: 0 }), i);
+  assert.equal(await para(0), '성명 : 홍길동 연락처 : 010-1234-5678 ');
+  assert.match(await para(1), /^20\d\d년 \d{1,2}월 \d{1,2}일$/);
+  await page.click('[aria-label="실행 취소"]');
+  assert.equal(await para(0), '성명 : ______    연락처 : ______');
+});
+
+await step('보내기 전에 개인정보 가리기: 찾은 것을 보여 주고 가린 사본만 보낸다', async () => {
+  await newDoc();
+  await page.keyboard.type('연락처 010-1234-5678, 주민번호 900101-1234567');
+  await page.click('.done-btn');
+  await page.click('[aria-label="보내기"]');
+  await page.click('.sheet.open .switch-row');
+  assert.equal(await page.isChecked('.sheet.open .switch-row input'), true);
+  await page.click('.sheet-row:has-text("텍스트")');
+  await page.waitForSelector('.sheet.open .autofill-row:has-text("010-●●●●-5678")');
+  await page.waitForSelector('.sheet.open .autofill-row:has-text("900101-1●●●●●●")');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('.sheet.open .dialog-actions .primary-btn')]);
+  const sent = (await readFile(await download.path())).toString('utf8');
+  assert.match(sent, /010-●●●●-5678/);
+  assert.doesNotMatch(sent, /1234567/);
+  // 원본은 그대로
+  assert.equal(await editor((ed) => ed.doc.paraText({ sec: 0, para: 0, offset: 0 })), '연락처 010-1234-5678, 주민번호 900101-1234567');
+  // 스위치를 다시 끈다 (다음 시험에 남지 않게)
+  await page.click('[aria-label="보내기"]');
+  await page.click('.sheet.open .switch-row');
+  assert.equal(await page.isChecked('.sheet.open .switch-row input'), false);
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet.open'));
+});
+
+await step('백업할 때 내 정보·서명을 넣을지 묻는다 (빼고 백업)', async () => {
+  await goHome();
+  await page.click('[aria-label="보관함 관리"]');
+  await page.click('.sheet.open .sheet-row:has-text("모두 백업하기")');
+  await page.waitForSelector('.sheet.open:has-text("내 정보·서명도 넣을까요?")');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('.sheet.open .secondary-btn:has-text("취소")')]);
+  const zip = await readFile(await download.path());
+  assert.ok(!zip.includes(Buffer.from('pocket-hwp-personal.json')), '빼고 백업했으면 내 정보가 없어야 함');
+});
+
 await step('페이지 오류가 없다', async () => {
   assert.deepEqual(errors, []);
 });

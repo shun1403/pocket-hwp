@@ -85,9 +85,9 @@ function cellText(doc: EditableDocument, pos: DocPos): string {
   }
 }
 
-/** 본문 표들의 빈 칸. 왼쪽(없으면 위) 칸의 글을 이름으로 쓴다. */
-function emptyCells(doc: EditableDocument): FormTarget[] {
-  const out: FormTarget[] = [];
+/** 본문 표들의 칸 (쪽에 걸친 표는 한 번만). 칸마다 첫 문단 위치와 이웃 칸을 찾는 함수를 준다. */
+export function tableCells(doc: EditableDocument): { pos: DocPos; row: number; col: number; near(row: number, col: number): DocPos | null }[] {
+  const out: ReturnType<typeof tableCells> = [];
   const seen = new Set<string>();
   for (let page = 0; page < doc.pageCount(); page += 1) {
     let controls: LayoutControl[];
@@ -99,25 +99,34 @@ function emptyCells(doc: EditableDocument): FormTarget[] {
     for (const t of controls) {
       if (t.type !== 'table' || !t.cells) continue;
       const cells = [...t.cells].sort((a, b) => a.row - b.row || a.col - b.col);
+      const near = (row: number, col: number) => {
+        const n = cells.find((x) => x.row === row && x.col === col);
+        return n ? cellPos(t, n.cellIdx) : null;
+      };
       for (const c of cells) {
         const key = `${t.secIdx}:${t.paraIdx}:${t.controlIdx}:${c.cellIdx}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const pos = cellPos(t, c.cellIdx);
-        if (cellText(doc, pos) !== '') continue;
-        const near = (row: number, col: number) => cells.find((x) => x.row === row && x.col === col);
-        const left = near(c.row, c.col - 1);
-        const up = near(c.row - 1, c.col);
-        const label = [left, up].map((n) => (n ? cellText(doc, cellPos(t, n.cellIdx)) : '')).find((s) => s && s !== '…') ?? '';
-        out.push({ kind: 'cell', pos, label: label || `표 ${c.row + 1}행 ${c.col + 1}열` });
+        out.push({ pos: cellPos(t, c.cellIdx), row: c.row, col: c.col, near });
       }
     }
   }
   return out;
 }
 
-/** 채울 빈칸 목록. 누름틀이 있으면 누름틀만, 없으면 표의 빈 칸. */
-export function formTargets(doc: EditableDocument): FormTarget[] {
+/** 본문 표들의 빈 칸. 왼쪽(없으면 위) 칸의 글을 이름으로 쓴다. */
+export function emptyCells(doc: EditableDocument): FormTarget[] {
+  const out: FormTarget[] = [];
+  for (const c of tableCells(doc)) {
+    if (cellText(doc, c.pos) !== '') continue;
+    const label = [c.near(c.row, c.col - 1), c.near(c.row - 1, c.col)].map((n) => (n ? cellText(doc, n) : '')).find((s) => s && s !== '…') ?? '';
+    out.push({ kind: 'cell', pos: c.pos, label: label || `표 ${c.row + 1}행 ${c.col + 1}열` });
+  }
+  return out;
+}
+
+/** 한글 누름틀 빈칸 */
+export function clickFields(doc: EditableDocument): FormTarget[] {
   const fields: FormTarget[] = [];
   for (const f of rawFields(doc)) {
     if (f.fieldType !== 'clickhere' || f.editableInForm === false) continue;
@@ -125,6 +134,12 @@ export function formTargets(doc: EditableDocument): FormTarget[] {
     if (!pos) continue;
     fields.push({ kind: 'field', pos, label: f.guide?.trim() || f.name?.trim() || '빈칸', fieldId: f.fieldId });
   }
+  return fields;
+}
+
+/** 채울 빈칸 목록. 누름틀이 있으면 누름틀만, 없으면 표의 빈 칸. */
+export function formTargets(doc: EditableDocument): FormTarget[] {
+  const fields = clickFields(doc);
   return fields.length ? fields : emptyCells(doc);
 }
 

@@ -9,6 +9,7 @@ import { Bindings, section, tiles } from '../controls';
 import type { PanelContext, TabDef } from '../context';
 import { openEquationSheet } from '../equation-sheet';
 import { openSignatureSheet } from '../signature-sheet';
+import { openAutofill } from '../../autofill-sheet';
 import { openTableSheet } from '../table-sheet';
 import { toast } from '../../toast';
 
@@ -125,6 +126,7 @@ export const insertTab: TabDef = {
         '양식',
         tiles(b, [
           { label: '서식 채우기', icon: 'form', onClick: () => ctx.openFormFill() },
+          { label: '내 정보로 채우기', icon: 'person', onClick: () => void openAutofill(ed) },
           { label: '서명·도장', icon: 'pen', onClick: () => void openSignatureSheet(ed) },
           { label: '기호·상용구', icon: 'symbol', onClick: () => ctx.openTab('symbol') },
         ]),
