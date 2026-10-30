@@ -2,6 +2,7 @@ import { type DocStats, documentStats } from '../../../doc/ops/inserts';
 import { documentText } from '../../../export/exporters';
 import { openBookmarksSheet, openMemosSheet, openOutlineSheet } from '../../doc-tools';
 import { h } from '../../dom';
+import { openSpellingSheet } from '../../spelling-sheet';
 import { readPref, writePref } from '../../../platform/prefs';
 import { Bindings, chips, section, tiles } from '../controls';
 import type { TabDef } from '../context';
@@ -115,6 +116,7 @@ export const viewTab: TabDef = {
           { label: '책갈피', icon: 'bookmark', onClick: () => openBookmarksSheet(ed) },
           { label: '메모', icon: 'memo', onClick: () => void openMemosSheet(ed) },
           { label: '문서 정보', icon: 'info', onClick: () => ctx.openInfo() },
+          { label: '맞춤법 검사', icon: 'check', onClick: () => openSpellingSheet(ed) },
         ]),
       ),
       section(

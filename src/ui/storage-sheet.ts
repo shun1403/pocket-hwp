@@ -7,6 +7,8 @@ import { isIosBrowserTab, requestPersistence, storageStatus } from '../platform/
 import { askConfirm } from './dialog';
 import { h } from './dom';
 import { openProfilesSheet } from './autofill-sheet';
+import { openLockSettings } from './lock-settings';
+import { lockSettings } from '../platform/app-lock';
 import { icon } from './icons';
 import { Sheet } from './sheet';
 import { toast } from './toast';
@@ -123,6 +125,12 @@ export async function openStorageSheet(onChange: () => void): Promise<void> {
       { onclick: async () => (sheet.close(), (await restoreFromFile()) && onChange()) },
       icon('upload'),
       h('span.row-text', {}, h('span', {}, '백업에서 불러오기'), h('span.row-sub', {}, '이미 있는 문서는 더 새것일 때만 바꿔요')),
+    ),
+    h(
+      'button.sheet-row',
+      { onclick: () => (sheet.close(), openLockSettings()) },
+      icon('lock'),
+      h('span.row-text', {}, h('span', {}, '앱 잠금'), h('span.row-sub', {}, lockSettings.get().enabled ? '켜짐' : '앱을 열 때 지문·얼굴·PIN으로 확인해요')),
     ),
     h(
       'button.sheet-row',

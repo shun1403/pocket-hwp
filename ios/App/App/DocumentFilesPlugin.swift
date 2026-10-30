@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 class MainViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(DocumentFilesPlugin())
+        bridge?.registerPluginInstance(AppLockPlugin())
     }
 }
 

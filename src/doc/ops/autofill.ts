@@ -119,7 +119,7 @@ export interface Slot {
 }
 
 /** 본문과 본문 표 칸의 모든 문단 (첫 위치) */
-function paragraphs(doc: EditableDocument): DocPos[] {
+export function paragraphs(doc: EditableDocument): DocPos[] {
   const out: DocPos[] = [];
   let sections = 1;
   try {
