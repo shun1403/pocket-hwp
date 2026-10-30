@@ -35,6 +35,7 @@ import { SearchBar } from './search-bar';
 import { type ShortcutActions, openShortcutsSheet, runShortcut } from './shortcuts';
 import { Sheet } from './sheet';
 import { openAutofill } from './autofill-sheet';
+import { openDatesSheet } from './dates-sheet';
 import { toast } from './toast';
 
 /** 한 번 키보드 높이를 못 잰 환경이면 다음부터는 기다리지 않고 바로 위에 붙인다. */
@@ -270,6 +271,7 @@ export class DocScreen {
       row('list', '목차 (제목으로 이동)', () => openOutlineSheet(this.editor)),
       row('bookmark', '책갈피', () => openBookmarksSheet(this.editor)),
       row('memo', '메모', () => void openMemosSheet(this.editor)),
+      row('calendar', '일정 꺼내기 (캘린더에 넣기)', () => openDatesSheet(this.session)),
       row('pages', '쪽 모아 보기', () => openPagesSheet(this.session, this.editor.view)),
       row('zoomFit', '쪽 전체 보기', () => this.editor.view.setZoomFactor(1)),
       row('text', '본문 폭에 맞추기 (글자 크게)', () => this.editor.view.fitBody(window.innerHeight / 2)),
@@ -366,11 +368,16 @@ export class DocScreen {
     openReader(this.session, this.editor.view.currentPage(), (page) => this.editor.view.scrollToPage(page));
   }
 
-  private openSearch(): void {
+  /** 문서 안에서 text 를 찾아 첫 곳을 보여 준다 (보관함 본문 검색으로 열었을 때). */
+  find(text: string): void {
+    this.openSearch(text);
+  }
+
+  private openSearch(text?: string): void {
     if (!this.search.el.hidden) return;
     this.search.el.hidden = false;
     this.appBar.hidden = true;
-    this.search.open();
+    this.search.open(text);
     this.searchBack = backScope(() => {
       this.searchBack = null;
       this.closeSearch();

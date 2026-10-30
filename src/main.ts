@@ -24,7 +24,7 @@ const home = new HomeScreen({
   openFile: () => void chooseFile(),
   newDocument: () => void withLoading(() => DocumentSession.createBlank(), true),
   openSample: () => void withLoading(() => DocumentSession.createSample()),
-  openEntry: (id) => void withLoading((pw) => DocumentSession.openEntry(id, pw)),
+  openEntry: (id, find) => void withLoading((pw) => DocumentSession.openEntry(id, pw), false, find),
   shareEntry: (id) => void shareEntry(id),
   about: () => openAbout(),
 });
@@ -86,7 +86,7 @@ const isWrongPassword = (err: unknown) => /일치하지 않|incorrect|wrong/i.te
  * 문서를 여는 동안 로딩 화면을 보여 주고, 열리면 문서 화면으로 넘어간다.
  * 암호 문서면 암호를 물어보고 다시 연다.
  */
-async function withLoading(open: (password?: string) => Promise<DocumentSession | null>, startEditing = false): Promise<void> {
+async function withLoading(open: (password?: string) => Promise<DocumentSession | null>, startEditing = false, find?: string): Promise<void> {
   if (busy) return;
   busy = true;
   const loading = h('div.loading', { role: 'status' }, h('div.spinner'), h('p', {}, '문서를 여는 중…'));
@@ -98,7 +98,11 @@ async function withLoading(open: (password?: string) => Promise<DocumentSession 
       try {
         const session = await open(password);
         if (!session) toast('문서를 찾지 못했어요.');
-        else showDoc(session, startEditing);
+        else {
+          showDoc(session, startEditing);
+          // 보관함 본문 검색으로 열었으면 그 글을 찾아 보여 준다.
+          if (find) docScreen?.find(find);
+        }
         return;
       } catch (err) {
         if (!isPasswordError(err) || attempt >= 3) throw err;

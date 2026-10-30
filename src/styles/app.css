@@ -2596,3 +2596,24 @@ input:focus-visible {
 .switch-row input[role='switch']:checked::after {
   transform: translateX(20px);
 }
+
+/* 보관함 본문 검색 결과 */
+.recent-snippet {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.recent-snippet mark {
+  background: var(--brand-weak);
+  color: var(--brand);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+.snippet-count {
+  color: var(--text-2);
+}

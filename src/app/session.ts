@@ -1,10 +1,11 @@
 import { EditableDocument } from '../doc/editable';
 import { hasMemos } from '../doc/ops/memos';
 import { HwpDocument, initEngine } from '../engine/rhwp';
-import { exportDocument, renderThumbnail } from '../export/exporters';
+import { documentText, exportDocument, renderThumbnail } from '../export/exporters';
 import { type DocFormat, baseName, detectFormat } from '../platform/bytes';
 import { type FileSource, fileHandles, writeToSource } from '../platform/document-files';
 import { type LibraryEntry, library, newId } from '../platform/library';
+import { searchIndex } from '../platform/search-index';
 import { VERSION_INTERVAL_MS, type DocVersion, versions } from '../platform/versions';
 import { buildSample } from './sample';
 
@@ -120,6 +121,7 @@ export class DocumentSession {
     // 암호 문서의 첫 쪽 그림을 목록에 남기지 않는다.
     if (!session.entry.thumbnail && !password) session.entry.thumbnail = renderThumbnail(raw);
     await library.put({ ...session.entry, bytes });
+    await session.indexText();
     if (opts.handle) {
       session.webHandle = opts.handle;
       await fileHandles.put(session.id, opts.handle).catch(() => undefined);
@@ -162,6 +164,14 @@ export class DocumentSession {
     return DocumentSession.open('Pocket HWP 사용 안내.hwp', bytes, { keepOriginal: false });
   }
 
+  /** 보관함 전체 검색에 쓸 본문 글을 남긴다. 암호 문서는 글을 남기지 않는다. */
+  private async indexText(): Promise<void> {
+    const skipped = !!this.password;
+    await searchIndex
+      .put({ id: this.entry.id, updatedAt: this.entry.updatedAt, text: skipped ? '' : documentText(this.doc.raw), skipped })
+      .catch(() => undefined);
+  }
+
   /** 편집이 일어날 때마다 호출: 잠시 뒤 보관함에 저장한다. */
   markDirty(): void {
     this.dirty = true;
@@ -191,6 +201,7 @@ export class DocumentSession {
         thumbnail: this.password ? undefined : (renderThumbnail(this.doc.raw) ?? this.entry.thumbnail),
       };
       await library.put({ ...this.entry, bytes });
+      await this.indexText();
       this.unversioned = true;
       if (this.entry.updatedAt - this.lastVersionAt >= VERSION_INTERVAL_MS) await this.addVersion(bytes, 'auto');
       this.onSaved?.();

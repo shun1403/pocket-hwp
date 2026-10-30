@@ -1,12 +1,13 @@
 /**
  * 앱 보관함 IndexedDB. 문서(documents), 문서별 이전 버전(versions), 저장한 서명(signatures),
- * 컴퓨터 브라우저에서 연 원래 파일 핸들(handles, 문서 id 별), 내 정보(profiles)를 둔다.
+ * 컴퓨터 브라우저에서 연 원래 파일 핸들(handles, 문서 id 별), 내 정보(profiles),
+ * 보관함 전체 검색용 본문 글(search, 문서 id 별)을 둔다.
  * 모든 데이터는 이 기기 안에만 있다.
  */
 const DB_NAME = 'pocket-hwp';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
-export type StoreName = 'documents' | 'versions' | 'signatures' | 'handles' | 'profiles';
+export type StoreName = 'documents' | 'versions' | 'signatures' | 'handles' | 'profiles' | 'search';
 
 export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -22,6 +23,7 @@ export function openDb(): Promise<IDBDatabase> {
       // 파일 핸들은 문서 목록과 따로 둔다: 목록을 읽을 때마다 핸들을 되살리지 않도록.
       if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles');
       if (!db.objectStoreNames.contains('profiles')) db.createObjectStore('profiles', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('search')) db.createObjectStore('search', { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
