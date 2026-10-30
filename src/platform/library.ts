@@ -1,6 +1,7 @@
 import type { DocFormat } from './bytes';
 import type { FileSource } from './document-files';
 import { tx } from './db';
+import { searchIndex } from './search-index';
 
 /** 앱 안에 보관하는 문서 (최근 문서 + 자동 저장본) */
 export interface LibraryEntry {
@@ -60,5 +61,6 @@ export const library = {
   },
   async remove(id: string): Promise<void> {
     await tx(STORE, 'readwrite', (s) => s.delete(id));
+    await searchIndex.remove(id).catch(() => undefined);
   },
 };

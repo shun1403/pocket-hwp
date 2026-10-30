@@ -1,6 +1,10 @@
+import { searchText, type TextHit } from '../doc/text-search';
+import { HwpDocument, initEngine } from '../engine/rhwp';
+import { documentText } from '../export/exporters';
 import { baseName } from '../platform/bytes';
 import { type LibrarySummary, library, needsBackup, newId } from '../platform/library';
 import { readPref, writePref } from '../platform/prefs';
+import { type IndexedText, searchIndex } from '../platform/search-index';
 import { isIosBrowserTab } from '../platform/storage';
 import { versions } from '../platform/versions';
 import { fileHandles } from '../platform/document-files';
@@ -15,7 +19,8 @@ export interface HomeActions {
   openFile(): void;
   newDocument(): void;
   openSample(): void;
-  openEntry(id: string): void;
+  /** find 를 주면 문서를 연 뒤 그 글을 찾아 보여 준다 (본문 검색 결과) */
+  openEntry(id: string, find?: string): void;
   shareEntry(id: string): void;
   about(): void;
 }
@@ -44,11 +49,14 @@ export class HomeScreen {
   private readonly notices = h('div.notices');
   private readonly searchBox = h('input.home-search', {
     type: 'search',
-    placeholder: '문서 이름으로 찾기',
+    placeholder: '문서 이름·내용으로 찾기 (초성도 돼요)',
     'aria-label': '최근 문서 찾기',
     enterkeyhint: 'search',
   }) as HTMLInputElement;
   private items: LibrarySummary[] = [];
+  /** 문서 id → 본문 글 (보관함 전체 검색) */
+  private texts = new Map<string, IndexedText>();
+  private indexing = false;
 
   constructor(private readonly actions: HomeActions) {
     this.list = h('div.recent-list', { role: 'list' });
@@ -90,7 +98,11 @@ export class HomeScreen {
       this.list,
     );
     this.searchBox.hidden = true;
-    this.searchBox.addEventListener('input', () => this.renderList());
+    let typing = 0;
+    this.searchBox.addEventListener('input', () => {
+      window.clearTimeout(typing);
+      typing = window.setTimeout(() => this.renderList(), 150);
+    });
     this.attachDrop();
   }
 
@@ -103,10 +115,47 @@ export class HomeScreen {
     }
     this.items = items;
     this.renderNotices(items);
-    // 문서가 몇 개 안 되면 찾기 칸은 자리만 차지한다.
-    this.searchBox.hidden = items.length < 5;
+    // 본문까지 찾으므로 문서가 두 개만 돼도 찾기 칸을 둔다.
+    this.searchBox.hidden = items.length < 2;
     if (this.searchBox.hidden) this.searchBox.value = '';
     this.renderList();
+    void this.buildIndex();
+  }
+
+  /**
+   * 본문 글이 없거나 오래된 문서를 한가할 때 하나씩 읽어 검색용 글을 만든다.
+   * (문서를 열어 저장할 때도 만들어지므로, 앱을 새로 깐 뒤 백업에서 되살린 문서 등이 대상이다.)
+   */
+  private async buildIndex(): Promise<void> {
+    if (this.indexing) return;
+    this.indexing = true;
+    try {
+      this.texts = new Map((await searchIndex.all()).map((t) => [t.id, t]));
+      for (const item of this.items) {
+        const known = this.texts.get(item.id);
+        if (known && known.updatedAt >= item.updatedAt) continue;
+        await new Promise((r) => window.setTimeout(r, 40));
+        const entry = await library.get(item.id);
+        if (!entry) continue;
+        let indexed: IndexedText;
+        try {
+          await initEngine();
+          const raw = new HwpDocument(entry.bytes);
+          indexed = { id: item.id, updatedAt: item.updatedAt, text: documentText(raw) };
+          raw.free();
+        } catch {
+          // 암호 문서 등 읽을 수 없는 문서는 건너뛴다.
+          indexed = { id: item.id, updatedAt: item.updatedAt, text: '', skipped: true };
+        }
+        await searchIndex.put(indexed);
+        this.texts.set(item.id, indexed);
+      }
+    } catch {
+      // 검색 색인은 보조 기능이라 실패해도 목록은 그대로 쓴다.
+    } finally {
+      this.indexing = false;
+    }
+    if (this.searchBox.value.trim()) this.renderList();
   }
 
   private renderList(): void {
@@ -125,10 +174,21 @@ export class HomeScreen {
       );
       return;
     }
-    const query = this.searchBox.value.trim().toLowerCase();
-    const shown = query ? items.filter((i) => i.name.toLowerCase().includes(query)) : items;
-    if (shown.length === 0) this.list.append(h('p.empty-search', {}, `“${this.searchBox.value.trim()}”이(가) 들어간 문서가 없어요.`));
-    for (const item of shown) this.list.append(this.card(item));
+    const query = this.searchBox.value.trim();
+    if (!query) {
+      for (const item of items) this.list.append(this.card(item));
+      return;
+    }
+    // 이름에 든 문서를 먼저, 그다음 본문에 든 문서
+    const byName = items.filter((i) => i.name.toLowerCase().includes(query.toLowerCase()) || searchText(baseName(i.name), query));
+    const byText = items
+      .filter((i) => !byName.includes(i))
+      .map((i) => ({ item: i, hit: searchText(this.texts.get(i.id)?.text ?? '', query) }))
+      .filter((x): x is { item: LibrarySummary; hit: TextHit } => !!x.hit);
+    if (byName.length + byText.length === 0) this.list.append(h('p.empty-search', {}, `“${query}”이(가) 들어간 문서가 없어요.`));
+    for (const item of byName) this.list.append(this.card(item));
+    for (const { item, hit } of byText) this.list.append(this.card(item, hit));
+    if (this.indexing) this.list.append(h('p.empty-search', {}, '문서 내용을 읽는 중이에요. 결과가 더 나올 수 있어요.'));
   }
 
   /** 데이터가 사라질 수 있는 상황을 알려 주는 안내 카드 */
@@ -169,7 +229,7 @@ export class HomeScreen {
     }
   }
 
-  private card(item: LibrarySummary): HTMLElement {
+  private card(item: LibrarySummary, hit?: TextHit): HTMLElement {
     const thumb = item.thumbnail
       ? h('img.recent-thumb', { src: item.thumbnail, alt: '', loading: 'lazy' })
       : h('div.recent-thumb.placeholder', {}, item.format.toUpperCase());
@@ -179,7 +239,7 @@ export class HomeScreen {
       { role: 'listitem' },
       h(
         'button.recent-open',
-        { onclick: () => this.actions.openEntry(item.id) },
+        { onclick: () => this.actions.openEntry(item.id, hit?.match) },
         thumb,
         h(
           'span.recent-text',
@@ -192,6 +252,16 @@ export class HomeScreen {
             item.edited ? h('span.badge', {}, '편집됨') : null,
             needsBackup(item) ? h('span.badge.warn', { title: '편집한 내용이 이 기기에만 있어요' }, '백업 전') : null,
           ),
+          hit
+            ? h(
+                'span.recent-snippet',
+                {},
+                hit.before,
+                h('mark', {}, hit.match),
+                hit.after,
+                hit.count > 1 ? h('span.snippet-count', {}, ` · ${hit.count}곳`) : null,
+              )
+            : null,
         ),
       ),
       h('button.icon-btn', { 'aria-label': `${item.name} 더보기`, onclick: () => this.more(item) }, icon('more')),

@@ -59,8 +59,14 @@ export class SearchBar {
     );
   }
 
-  open(): void {
+  /** text 를 주면 그 말로 바로 찾아 첫 곳을 고른다. */
+  open(text?: string): void {
     this.replaceRow.hidden = this.editor.currentMode !== 'edit';
+    if (text) {
+      this.query.value = text;
+      this.run();
+      return;
+    }
     this.query.focus();
     this.query.select();
   }

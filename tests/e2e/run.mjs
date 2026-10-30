@@ -738,7 +738,8 @@ await step('홈: 고정·사본 만들기·이름으로 찾기', async () => {
   await page.waitForSelector('.recent-name:has-text("(사본)")');
   assert.ok(await page.isVisible('.home-search'), '문서가 많으면 찾기 칸이 보인다');
   await page.fill('.home-search', '(사본)');
-  assert.equal(await page.$$eval('.recent-item', (els) => els.length), 1);
+  // 찾기는 입력이 잠깐 멈춘 뒤에 돈다.
+  await page.waitForFunction(() => document.querySelectorAll('.recent-item').length === 1);
   await page.fill('.home-search', '');
 });
 
@@ -1371,6 +1372,40 @@ await step('백업할 때 내 정보·서명을 넣을지 묻는다 (빼고 백�
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('.sheet.open .secondary-btn:has-text("취소")')]);
   const zip = await readFile(await download.path());
   assert.ok(!zip.includes(Buffer.from('pocket-hwp-personal.json')), '빼고 백업했으면 내 정보가 없어야 함');
+});
+
+await step('보관함 전체 검색: 본문·초성으로 찾고, 누르면 그 자리를 찾아 연다', async () => {
+  await newDoc();
+  await page.keyboard.type('가정통신문');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('현장 체험 학습 신청서는 11월 5일(수)까지 제출해 주세요.');
+  await page.click('.done-btn');
+  await goHome();
+  await page.waitForSelector('.home-search:not([hidden])');
+  await page.fill('.home-search', '체험학습');
+  await page.waitForSelector('.recent-snippet mark:has-text("체험 학습")');
+  await page.fill('.home-search', 'ㄱㅈㅌㅅㅁ');
+  await page.waitForSelector('.recent-snippet mark:has-text("가정통신문")');
+  await page.fill('.home-search', '체험학습');
+  await page.waitForSelector('.recent-snippet mark:has-text("체험 학습")');
+  await page.click('.recent-item:has(.recent-snippet) .recent-open');
+  await page.waitForSelector('.doc .page canvas');
+  await page.waitForFunction(() => document.querySelector('.search-input')?.value === '체험 학습');
+  assert.equal(await editor((ed) => ed.selectedText()), '체험 학습');
+});
+
+await step('일정 꺼내기: 문서 속 마감 날짜를 캘린더 파일(.ics)로', async () => {
+  await page.goBack(); // 찾기 막대 닫기
+  await page.click('[aria-label="더보기"]');
+  await page.click('.sheet-row:has-text("일정 꺼내기")');
+  await page.waitForSelector('.sheet.open .autofill-row:has-text("11월 5일")');
+  assert.match(await page.textContent('.sheet.open .autofill-row'), /마감/);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('.sheet.open .dialog-actions .primary-btn')]);
+  assert.match(download.suggestedFilename(), /일정\.ics$/);
+  const ics = (await readFile(await download.path())).toString('utf8');
+  assert.match(ics, /BEGIN:VEVENT/);
+  assert.match(ics, /DTSTART;VALUE=DATE:\d{4}1105/);
+  assert.match(ics, /SUMMARY:\[마감\]/);
 });
 
 await step('페이지 오류가 없다', async () => {
