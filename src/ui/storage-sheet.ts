@@ -1,8 +1,12 @@
-import { backupFileName, createBackup, restoreBackup } from '../app/backup';
+import { type PersonalData, backupFileName, createBackup, restoreBackup } from '../app/backup';
 import { isNative, pickFile, shareFile } from '../platform/files';
 import { library } from '../platform/library';
+import { profiles } from '../platform/profiles';
+import { signatures } from '../platform/signatures';
 import { isIosBrowserTab, requestPersistence, storageStatus } from '../platform/storage';
+import { askConfirm } from './dialog';
 import { h } from './dom';
+import { openProfilesSheet } from './autofill-sheet';
 import { icon } from './icons';
 import { Sheet } from './sheet';
 import { toast } from './toast';
@@ -14,7 +18,18 @@ function mb(bytes: number | undefined): string {
 
 /** 보관함 전체를 ZIP으로 내보낸다. 성공하면 true */
 export async function backupAll(): Promise<boolean> {
-  const { zip, count, ids } = await createBackup();
+  // 내 정보·서명은 넣을지 그때마다 묻는다 (기본은 빼고).
+  const [mine, signs] = await Promise.all([profiles.list().catch(() => []), signatures.list().catch(() => [])]);
+  let personal: PersonalData | undefined;
+  if (mine.length || signs.length) {
+    const include = await askConfirm({
+      title: '내 정보·서명도 넣을까요?',
+      message: `저장한 내 정보 ${mine.length}명, 서명·도장 ${signs.length}개가 있어요.\n넣으면 백업 파일을 가진 사람이 이 정보를 볼 수 있어요. 빼도 문서는 모두 백업돼요.`,
+      confirmLabel: '넣어서 백업',
+    });
+    if (include) personal = { profiles: mine, signatures: signs };
+  }
+  const { zip, count, ids } = await createBackup(personal);
   if (count === 0) {
     toast('백업할 문서가 없어요.');
     return false;
@@ -31,7 +46,12 @@ export async function restoreFromFile(): Promise<boolean> {
   if (!file) return false;
   try {
     const r = await restoreBackup(new Uint8Array(await file.arrayBuffer()));
-    const parts = [r.added && `${r.added}개 추가`, r.updated && `${r.updated}개 새 버전으로 바꿈`, r.skipped && `${r.skipped}개는 이미 최신`].filter(Boolean);
+    const parts = [
+      r.added && `${r.added}개 추가`,
+      r.updated && `${r.updated}개 새 버전으로 바꿈`,
+      r.skipped && `${r.skipped}개는 이미 최신`,
+      r.personal && `내 정보·서명 ${r.personal}개`,
+    ].filter(Boolean);
     toast(parts.length ? `백업에서 불러왔어요: ${parts.join(', ')}` : '백업 안에 한글 문서가 없어요.');
     return true;
   } catch {
@@ -103,6 +123,12 @@ export async function openStorageSheet(onChange: () => void): Promise<void> {
       { onclick: async () => (sheet.close(), (await restoreFromFile()) && onChange()) },
       icon('upload'),
       h('span.row-text', {}, h('span', {}, '백업에서 불러오기'), h('span.row-sub', {}, '이미 있는 문서는 더 새것일 때만 바꿔요')),
+    ),
+    h(
+      'button.sheet-row',
+      { onclick: () => (sheet.close(), void openProfilesSheet()) },
+      icon('person'),
+      h('span.row-text', {}, h('span', {}, '내 정보 관리'), h('span.row-sub', {}, '서류를 한 번에 채울 이름·연락처·주소 (이 기기 안에만)')),
     ),
     h(
       'p.sheet-note',

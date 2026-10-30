@@ -2481,3 +2481,118 @@ input:focus-visible {
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
+
+/* 내 정보로 채우기 · 개인정보 가리기 */
+.autofill-list {
+  display: flex;
+  flex-direction: column;
+  margin: 4px 0 8px;
+}
+.autofill-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.autofill-row input[type='checkbox'] {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  accent-color: var(--brand);
+}
+.autofill-row[data-missing='true'] .autofill-value {
+  color: var(--text-2);
+  font-style: italic;
+}
+.autofill-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.autofill-label {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.autofill-value {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.autofill-person {
+  flex: none;
+  height: 40px;
+  max-width: 34%;
+  padding: 0 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+.profile-form {
+  gap: 10px;
+}
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.profile-field .text-field {
+  color: var(--text);
+}
+.danger-text {
+  color: var(--danger);
+}
+.warn-note {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--warn-bg);
+  color: var(--warn-text) !important;
+}
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.switch-row .row-text {
+  flex: 1;
+}
+.switch-row input[role='switch'] {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 48px;
+  height: 28px;
+  border-radius: 14px;
+  background: var(--line);
+  transition: background 0.15s;
+  cursor: pointer;
+}
+.switch-row input[role='switch']::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: transform 0.15s;
+}
+.switch-row input[role='switch']:checked {
+  background: var(--brand);
+}
+.switch-row input[role='switch']:checked::after {
+  transform: translateX(20px);
+}

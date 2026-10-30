@@ -34,6 +34,7 @@ import { openReader } from './reader';
 import { SearchBar } from './search-bar';
 import { type ShortcutActions, openShortcutsSheet, runShortcut } from './shortcuts';
 import { Sheet } from './sheet';
+import { openAutofill } from './autofill-sheet';
 import { toast } from './toast';
 
 /** 한 번 키보드 높이를 못 잰 환경이면 다음부터는 기다리지 않고 바로 위에 붙인다. */
@@ -262,6 +263,10 @@ export class DocScreen {
       h('button.sheet-row', { onclick: () => (sheet.close(), run()) }, icon(name), label);
     sheet.body.append(
       row('form', '서식 채우기 (빈칸 차례로 채우기)', () => this.openFormFill()),
+      row('person', '내 정보로 채우기 (이름·연락처·주소)', () => {
+        if (this.editor.currentMode !== 'edit') this.setEditing(true, false);
+        void openAutofill(this.editor);
+      }),
       row('list', '목차 (제목으로 이동)', () => openOutlineSheet(this.editor)),
       row('bookmark', '책갈피', () => openBookmarksSheet(this.editor)),
       row('memo', '메모', () => void openMemosSheet(this.editor)),

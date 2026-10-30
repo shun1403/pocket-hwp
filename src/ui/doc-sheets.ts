@@ -1,5 +1,5 @@
 import type { DocumentSession } from '../app/session';
-import { engineVersion } from '../engine/rhwp';
+import { type HwpDocument, engineVersion } from '../engine/rhwp';
 import { documentText, exportDocument, exportPdf } from '../export/exporters';
 import { parsePageRange, renderPagesPng } from '../export/images';
 import { printDocument } from '../export/print';
@@ -10,6 +10,7 @@ import type { PageView } from '../view/page-view';
 import { askConfirm, askPassword, askText } from './dialog';
 import { h } from './dom';
 import { icon } from './icons';
+import { type SendSource, redactSwitch, sendSource } from './redact-sheet';
 import { Sheet } from './sheet';
 import { toast } from './toast';
 
@@ -19,8 +20,8 @@ async function deliver(name: string, bytes: Uint8Array, mime: string): Promise<b
   return result !== 'cancelled';
 }
 
-async function sendDocument(session: DocumentSession, format: DocFormat, password?: string): Promise<void> {
-  const { bytes, lossWarnings } = exportDocument(session.doc.raw, format, password);
+async function sendDocument(session: DocumentSession, raw: HwpDocument, format: DocFormat, password?: string): Promise<void> {
+  const { bytes, lossWarnings } = exportDocument(raw, format, password);
   if (lossWarnings.length > 0) {
     const ok = await askConfirm({
       title: '일부 내용이 빠질 수 있어요',
@@ -52,11 +53,11 @@ export async function saveToOriginal(session: DocumentSession): Promise<boolean>
 }
 
 /** 쪽마다 그리는 동안 진행 상황을 보여 주며 인쇄한다. */
-export async function printWithProgress(session: DocumentSession): Promise<void> {
+export async function printWithProgress(session: DocumentSession, raw: HwpDocument = session.doc.raw): Promise<void> {
   const progress = h('div.progress-toast', {}, '인쇄 준비 중…');
   document.body.append(progress);
   try {
-    await printDocument(session.doc.raw, baseName(session.name), (done, total) => {
+    await printDocument(raw, baseName(session.name), (done, total) => {
       progress.textContent = `인쇄 준비 중… ${done}/${total}`;
     });
   } finally {
@@ -65,8 +66,7 @@ export async function printWithProgress(session: DocumentSession): Promise<void>
 }
 
 /** 쪽을 사진(PNG)으로 보낸다: 모든 쪽 · 지금 쪽 · 쪽 고르기 */
-async function sendImages(session: DocumentSession, currentPage: number): Promise<void> {
-  const raw = session.doc.raw;
+async function sendImages(session: DocumentSession, raw: HwpDocument, currentPage: number): Promise<void> {
   const total = raw.pageCount();
   const pages = await new Promise<number[] | null>((resolve) => {
     let picked: number[] | null = null;
@@ -126,48 +126,51 @@ async function sendImages(session: DocumentSession, currentPage: number): Promis
 /** 보내기(공유)·내보내기 선택지. currentPage 는 '지금 쪽만' 사진으로 보낼 때 쓴다. */
 export function openExportSheet(session: DocumentSession, currentPage = 0): void {
   const sheet = new Sheet({ title: '보내기' });
-  const row = (iconName: Parameters<typeof icon>[0], title: string, sub: string, run: () => Promise<void>) =>
-    h(
-      'button.sheet-row',
-      {
-        onclick: async () => {
-          sheet.close();
-          try {
-            await run();
-          } catch (err) {
-            console.error(err);
-            toast('보내지 못했어요. 다시 시도해 주세요.');
-          }
-        },
-      },
-      icon(iconName),
-      h('span.row-text', {}, h('span', {}, title), h('span.row-sub', {}, sub)),
-    );
+  const button = (iconName: Parameters<typeof icon>[0], title: string, sub: string, onclick: () => Promise<void>) =>
+    h('button.sheet-row', { onclick }, icon(iconName), h('span.row-text', {}, h('span', {}, title), h('span.row-sub', {}, sub)));
+  /** 보내기 줄: 스위치가 켜져 있으면 개인정보를 가린 사본으로 보낸다. */
+  const row = (iconName: Parameters<typeof icon>[0], title: string, sub: string, run: (raw: HwpDocument) => Promise<void>) =>
+    button(iconName, title, sub, async () => {
+      sheet.close();
+      let source: SendSource | null = null;
+      try {
+        source = await sendSource(session);
+        if (source) await run(source.raw);
+      } catch (err) {
+        console.error(err);
+        toast('보내지 못했어요. 다시 시도해 주세요.');
+      } finally {
+        source?.free();
+      }
+    });
   if (import.meta.env.VITE_SANDBOXED) {
     sheet.body.append(
       h('p.sheet-note', {}, 'Claude 미리보기 안에서는 파일을 내보낼 수 없어요. 설치한 앱이나 웹 버전에서 보내기를 써 주세요.'),
     );
   }
+  sheet.body.append(redactSwitch());
   if (session.sourceName) {
+    // 원래 파일 자리에 저장할 때는 가리지 않는다 (내 원본이므로).
     sheet.body.append(
-      row('download', '원래 파일에 저장', `${session.sourceName}에 고친 내용을 덮어써요`, async () => {
+      button('download', '원래 파일에 저장', `${session.sourceName}에 고친 내용을 덮어써요`, async () => {
+        sheet.close();
         await saveToOriginal(session);
       }),
     );
   }
   sheet.body.append(
-    row('share', '한글 문서 (.hwp)', '한컴오피스·다른 앱에서 열 수 있어요', () => sendDocument(session, 'hwp')),
-    row('share', 'HWPX 문서 (.hwpx)', '개방형 한글 형식 (실험적)', () => sendDocument(session, 'hwpx')),
-    row('lock', '암호 건 한글 문서', '열 때 암호를 물어요 (.hwp·.hwpx)', async () => {
+    row('share', '한글 문서 (.hwp)', '한컴오피스·다른 앱에서 열 수 있어요', (raw) => sendDocument(session, raw, 'hwp')),
+    row('share', 'HWPX 문서 (.hwpx)', '개방형 한글 형식 (실험적)', (raw) => sendDocument(session, raw, 'hwpx')),
+    row('lock', '암호 건 한글 문서', '열 때 암호를 물어요 (.hwp·.hwpx)', async (raw) => {
       const choice = await askPassword();
-      if (choice) await sendDocument(session, choice.format, choice.password);
+      if (choice) await sendDocument(session, raw, choice.format, choice.password);
     }),
-    row('image', '사진 (.png)', '쪽마다 사진으로 · 한글이 없어도 보여요', () => sendImages(session, currentPage)),
-    row('download', 'PDF', '쪽 모양 그대로 보내기', async () => {
+    row('image', '사진 (.png)', '쪽마다 사진으로 · 한글이 없어도 보여요', (raw) => sendImages(session, raw, currentPage)),
+    row('download', 'PDF', '쪽 모양 그대로 보내기', async (raw) => {
       const progress = h('div.progress-toast', {}, 'PDF 만드는 중…');
       document.body.append(progress);
       try {
-        const pdf = await exportPdf(session.doc.raw, (done, total) => {
+        const pdf = await exportPdf(raw, (done, total) => {
           progress.textContent = `PDF 만드는 중… ${done}/${total}`;
         });
         await deliver(`${baseName(session.name)}.pdf`, pdf, MIME.pdf);
@@ -175,9 +178,9 @@ export function openExportSheet(session: DocumentSession, currentPage = 0): void
         progress.remove();
       }
     }),
-    row('print', '인쇄', '프린터로 바로 인쇄하기', () => printWithProgress(session)),
-    row('text', '텍스트 (.txt)', '글자만 뽑아 보내기', async () => {
-      const text = documentText(session.doc.raw);
+    row('print', '인쇄', '프린터로 바로 인쇄하기', (raw) => printWithProgress(session, raw)),
+    row('text', '텍스트 (.txt)', '글자만 뽑아 보내기', async (raw) => {
+      const text = documentText(raw);
       await deliver(`${baseName(session.name)}.txt`, new TextEncoder().encode(text), MIME.txt);
     }),
   );

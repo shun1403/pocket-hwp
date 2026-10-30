@@ -82,3 +82,30 @@ describe('백업 목록 확인', () => {
     expect(readManifest(undefined, now).size).toBe(0);
   });
 });
+
+describe('백업 안의 내 정보·서명', () => {
+  const enc = (v: unknown) => new TextEncoder().encode(JSON.stringify(v));
+  const png = btoa(String.fromCharCode(0x89, 0x50, 0x4e, 0x47, 1, 2, 3));
+  it('알려진 항목만 받고 모양이 이상한 것은 버린다', async () => {
+    const { readPersonal } = await import('../../src/app/backup');
+    const now = 1000;
+    const r = readPersonal(
+      enc({
+        profiles: [
+          { id: 'p-1', label: '나', kind: 'self', values: { name: '홍길동', rrn: '900101-1234567', mobile: 7 }, updatedAt: 99999 },
+          { id: '../evil', label: 'x', values: {} },
+          null,
+        ],
+        signatures: [
+          { id: 's-1', kind: 'sign', png, width: 100, height: 40, createdAt: 5 },
+          { id: 's-2', kind: 'sign', png: btoa('not png'), width: 100, height: 40 },
+          { id: 's-3', kind: 'sign', png, width: 99999, height: 40 },
+        ],
+      }),
+      now,
+    );
+    expect(r.profiles).toEqual([{ id: 'p-1', label: '나', kind: 'self', values: { name: '홍길동' }, updatedAt: now }]);
+    expect(r.signatures.map((s) => s.id)).toEqual(['s-1']);
+    expect(readPersonal(new TextEncoder().encode('{'), now)).toEqual({ profiles: [], signatures: [] });
+  });
+});

@@ -24,6 +24,10 @@ export const signatures = {
     const stale = (await signatures.list()).slice(MAX_SIGNATURES);
     if (stale.length) await tx('signatures', 'readwrite', (s) => void stale.forEach((x) => s.delete(x.id)));
   },
+  /** 백업에서 되살릴 때: 받은 그대로 넣는다. */
+  async put(sig: SavedSignature): Promise<void> {
+    await tx('signatures', 'readwrite', (s) => s.put(sig));
+  },
   async remove(id: string): Promise<void> {
     await tx('signatures', 'readwrite', (s) => s.delete(id));
   },
