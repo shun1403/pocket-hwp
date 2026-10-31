@@ -258,6 +258,19 @@ pnpm ios          # 웹 빌드 → Xcode 열기 (macOS + Xcode 필요)
 - 실제 기기 확인은 안드로이드 위주로 했고, 아이폰 앱은 빌드만 확인했습니다. 아이폰에서는 웹 앱을 권장합니다.
 - PDF는 쪽을 그림으로 묶어 만듭니다(글자 선택·검색 불가).
 
+## Contributors
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/shun1403"><img src="https://github.com/shun1403.png?size=100" width="80" alt="shun1403" /><br /><sub><b>shun1403</b></sub></a><br />
+      <sub>만든 사람 · 관리</sub>
+    </td>
+  </tr>
+</table>
+
+함께 만들고 싶다면 이슈나 PR을 열어 주세요. 개발 방법은 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)에 있어요.
+
 ## Credits
 
 - 문서 파싱·렌더링·편집 엔진: [rhwp](https://github.com/edwardkim/rhwp) (MIT) — 엔진을 공개해 주신 분들께 감사드립니다.
